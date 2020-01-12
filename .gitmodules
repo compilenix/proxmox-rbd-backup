@@ -1,0 +1,3 @@
+[submodule "rbd-to-rbd-backup-worker"]
+	path = rbd-to-rbd-backup-worker
+	url = https://git.compilenix.org/CompileNix/rbd-to-rbd-backup-worker.git
