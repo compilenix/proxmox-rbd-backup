@@ -48,11 +48,20 @@ for item in tmp_storages:
 del tmp_storages
 
 
-def is_rbd_disk(disk: str) -> object or None:
+def is_rbd_disk(name: str) -> object or None:
     for storage_rbd in storages_rbd:
-        if disk.startswith(storage_rbd['name'] + ':vm-'):
+        if name.startswith(storage_rbd['name'] + ':vm-'):
             return storage_rbd
     return None
+
+
+class CephRbdImage:
+    def __init__(self, pool_name: str, image: str):
+        self.pool = pool_name
+        self.name = image
+
+    def __str__(self):
+        return '{0}:{1}'.format(self.pool, self.name)
 
 
 class VM:
@@ -62,7 +71,7 @@ class VM:
         self.name = ''
         self.node = ''
         self.config = ''
-        self.rbd_disks = []
+        self.rbd_disks = []  # type: List[CephRbdImage]
 
 
 helper.log_message('get vm\'s...', helper.LOGLEVEL_INFO)
@@ -115,14 +124,18 @@ for node in nodes:
                     disk_name = item['value'].split(',')[0]
                     helper.log_message('found proxmox vm disk: ' + disk_name, helper.LOGLEVEL_DEBUG)
                     # can't check if disk should be ignored because vm uuid may not be preset, yet
-                    vm_item.rbd_disks.append(disk_name.replace(storage['name'], storage['pool']))
+                    pool = disk_name.replace(storage['name'], storage['pool']).split(':')[0]
+                    image_name = disk_name.split(':')[1]
+                    vm_item.rbd_disks.append(CephRbdImage(pool, image_name))
                     del disk_name
+                    del pool
+                    del image_name
                 del storage
             vm_item.config += '{0}: {1}\n'.format(item['key'], item['value'])
         del cfg
 
         for disk in vm_item.rbd_disks:
-            disks_to_ignore = [str]
+            disks_to_ignore = []  # type: List[str]
             if vm_item.id in config and 'ignore_disks' in config[vm_item.id]:
                 disks_to_ignore = config[vm_item.id]['ignore_disks'].replace(' ', '').split(',')
             if disk in disks_to_ignore:
