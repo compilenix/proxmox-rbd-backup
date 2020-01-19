@@ -18,7 +18,7 @@ def get_rbd_snapshots(pool: str, image: str, command_inject: str = ''):
 
 
 def get_rbd_snapshots_by_prefix(pool: str, image: str, snapshot_prefix: str, command_inject: str = ''):
-    helper.log_message('get ceph snapshot count for image ' + image, helper.LOGLEVEL_INFO)
+    helper.log_message('get ceph snapshot count for image ' + image, helper.LOGLEVEL_DEBUG)
     snapshots = []
     for current_snapshot in get_rbd_snapshots(pool, image, command_inject):
         if current_snapshot['name'].startswith(snapshot_prefix, 0, len(snapshot_prefix)):
@@ -32,14 +32,14 @@ def create_rbd_snapshot(pool: str, image: str, snapshot_prefix: str = '', new_sn
         name = snapshot_prefix + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
     else:
         name = new_snapshot_name
-    helper.log_message('exec command "' + command_inject + 'rbd -p ' + pool + ' snap create ' + image + '@' + name + '"', helper.LOGLEVEL_INFO)
+    helper.log_message('exec command "' + command_inject + 'rbd -p ' + pool + ' snap create ' + image + '@' + name + '"', helper.LOGLEVEL_DEBUG)
     if command_inject != '':
         code = subprocess.call(command_inject.strip().split(' ') + ['rbd', '-p', pool, 'snap', 'create', image + '@' + name])
     else:
         code = subprocess.call(['rbd', '-p', pool, 'snap', 'create', image + '@' + name])
     if code != 0:
         raise RuntimeError('error creating ceph snapshot code: ' + str(code))
-    helper.log_message('ceph snapshot created ' + name, helper.LOGLEVEL_INFO)
+    helper.log_message('ceph snapshot created ' + name, helper.LOGLEVEL_DEBUG)
     return name
 
 
@@ -74,7 +74,7 @@ def wait_for_cluster_healthy(command_inject: str = ''):
     helper.log_message('waiting for ceph cluster to become healthy', helper.LOGLEVEL_INFO)
     while helper.exec_raw(command_inject + 'ceph health detail').startswith('HEALTH_ERR'):
         time.sleep(10)
-        helper.log_message('waiting for ceph cluster to become healthy', helper.LOGLEVEL_INFO)
+        helper.log_message('waiting for ceph cluster to become healthy', helper.LOGLEVEL_DEBUG)
 
 
 def wait_for_scrubbing_completion(command_inject: str = ''):
@@ -82,19 +82,19 @@ def wait_for_scrubbing_completion(command_inject: str = ''):
     pattern = re.compile("scrubbing")
     while pattern.search(helper.exec_raw(command_inject + 'ceph status')):
         time.sleep(10)
-        helper.log_message('waiting for ceph cluster to complete scrubbing', helper.LOGLEVEL_INFO)
+        helper.log_message('waiting for ceph cluster to complete scrubbing', helper.LOGLEVEL_DEBUG)
 
 
 def map_rbd_image(pool: str, image: str, command_inject: str = ''):
-    helper.log_message('mapping ceph image ' + pool + '/' + image, helper.LOGLEVEL_INFO)
+    helper.log_message('mapping ceph image ' + pool + '/' + image, helper.LOGLEVEL_DEBUG)
     return helper.exec_raw(command_inject + 'rbd -p ' + pool + ' device map ' + image)
 
 
 def unmap_rbd_image(pool: str, image: str, command_inject: str = ''):
-    helper.log_message('unmapping ceph image ' + pool + '/' + image, helper.LOGLEVEL_INFO)
+    helper.log_message('unmapping ceph image ' + pool + '/' + image, helper.LOGLEVEL_DEBUG)
     return helper.exec_raw(command_inject + 'rbd -p ' + pool + ' device unmap ' + image)
 
 
 def get_rbd_image_mapped_info(command_inject: str = ''):
-    helper.log_message('get info about mapped rbd images' + (' locally' if command_inject == '' else ' on remote: ' + command_inject.split('@')[1]), helper.LOGLEVEL_INFO)
+    helper.log_message('get info about mapped rbd images' + (' locally' if command_inject == '' else ' on remote: ' + command_inject.split('@')[1]), helper.LOGLEVEL_DEBUG)
     return helper.exec_parse_json(command_inject + 'rbd device list --format json')

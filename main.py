@@ -11,7 +11,6 @@ import lib.helper as helper
 import re
 import lib.ceph as ceph
 from typing import List
-import time
 import random
 
 if not os.path.isfile('config/global.ini'):
@@ -30,6 +29,7 @@ helper.LOGLEVEL = helper.LOGLEVEL_DEBUG
 proxmox = ProxmoxAPI(servers[0], user=config['global']['user'], password=config['global']['password'], verify_ssl=config['global'].getboolean('verify_ssl'))
 
 nodes = proxmox.nodes.get()
+nodes = sorted(nodes, key=lambda x: x['node'])
 vms = []
 storages_rbd = []
 storages_to_ignore = []
@@ -82,6 +82,7 @@ tmp_vms = []
 for node in nodes:
     helper.log_message('get vm\'s from node {0}'.format(node['node']), helper.LOGLEVEL_INFO)
     tmp_vms = proxmox.nodes(node['node']).qemu.get()
+    tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
     for vm in tmp_vms:
         vm_item = VM()
         vm_item.number = vm['vmid']
@@ -102,6 +103,7 @@ for node in nodes:
         # format and add vm config
         cfg = proxmox.nodes(vm_item.node).qemu(vm_item.number).get('pending')
         cfg = sorted(cfg, key=lambda x: x['key'])
+        description = ''
         for item in cfg:
             if item['key'] == 'digest':
                 continue
@@ -134,8 +136,14 @@ for node in nodes:
                     del pool
                     del image_name
                 del storage
-            vm_item.config += '{0}: {1}\n'.format(item['key'], item['value'])
+            if item['key'] == 'description':
+                for description_line in item["value"].split('\n'):
+                    description += f'#{description_line}\n'
+                del description_line
+            else:
+                vm_item.config += f'{item["key"]}: {item["value"]}\n'
         del cfg
+        vm_item.config = f'{description}{vm_item.config}'
 
         for disk in vm_item.rbd_disks:
             disks_to_ignore = []  # type: List[str]
@@ -190,15 +198,13 @@ for vm in vms:
     mapped_image_path = ''
     if is_vm_metadata_existing:
         # map vm metadata image
-        helper.log_message('map ceph metadata image {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_DEBUG)
         mapped_image_path = map_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
         # mount vm metadata image
         mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
     else:
         # create vm metadata image
-        helper.log_message('create ceph metadata image for vm in ceph backup cluster: {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_INFO)
+        helper.log_message('metadata image for vm not existing; creating...', helper.LOGLEVEL_INFO)
         ceph.create_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name, config['global']['vm_metadata_image_size'])
-        time.sleep(1)
         is_vm_metadata_existing = ceph.is_rbd_image_existing(backup_rbd_pool, rbd_image_vm_metadata_name)
         if not is_vm_metadata_existing:
             raise RuntimeError('ceph metadata image for vm is not existing right after creation, this may be a transient error: {0}'.format(rbd_image_vm_metadata_name))
@@ -206,16 +212,15 @@ for vm in vms:
             # disable metadata image features (if needed)
             helper.exec_raw('rbd feature disable {0} {1}'.format(rbd_image_vm_metadata_name, ' '.join(config['global']['ceph_backup_disable_rbd_image_features_for_metadata'].replace(' ', '').split(','))))
         # map metadata image
-        helper.log_message('map rbd vm metadata image {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_DEBUG)
         mapped_image_path = map_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
         # format metadata image
-        helper.log_message('format vm metadata image with ext4: {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_DEBUG)
         helper.exec_raw(f'mkfs.ext4 -L {rbd_image_vm_metadata_name[0:16]} {mapped_image_path}')
         # mount metadata image
         mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
     del is_vm_metadata_existing
 
     # save current config into metadata image
+    helper.log_message(f'save current config into metadata image -> /tmp/{rbd_image_vm_metadata_name}/{vm.number}.conf', helper.LOGLEVEL_DEBUG)
     with open(f'/tmp/{rbd_image_vm_metadata_name}/{vm.number}.conf', 'w') as config_file:
         print(vm.config, file=config_file)
         # TODO: add hocking-system to call external scripts which may include more metadata
@@ -223,12 +228,10 @@ for vm in vms:
     del config_file
 
     # unmount vm metadata image
-    helper.log_message(f'unmount vm metadata filesystem {rbd_image_vm_metadata_name}', helper.LOGLEVEL_DEBUG)
     helper.exec_raw(f'umount /tmp/{rbd_image_vm_metadata_name}')
     helper.exec_raw(f'rmdir /tmp/{rbd_image_vm_metadata_name}')
 
     # unmap rbd image
-    helper.log_message(f'unmap rbd vm metadata image {rbd_image_vm_metadata_name}', helper.LOGLEVEL_DEBUG)
     ceph.unmap_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
 
     # create snapshot of vm metadata image
