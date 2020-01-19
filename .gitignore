@@ -71,3 +71,4 @@ fabric.properties
 
 /.vscode/.ropeproject
 /config/global.ini
+__pycache__
