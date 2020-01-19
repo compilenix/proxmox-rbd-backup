@@ -1,6 +1,10 @@
-# TODO: create vm snapshot
+# TODO: create vm snapshot via proxmox api
 # TODO: backup rbd disk's of vm
-# TODO: remove old vm snapshot
+# TODO: remove old vm snapshots
+# TODO: list vm's in backup
+# TODO: list backups of given vm
+# TODO: perform restore of given backup
+# TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
 # TODO: how to handle proxmox snapshots (especially those including RAM)
 # TODO: migrate from str.format() to f'' (f-strings)
 
