@@ -1,17 +1,18 @@
-# TODO: create and mount metadata of vm in backup cluster
-# TODO: copy current vm config to metadata
-# TODO: unmount metadata
-# TODO: create snapshot of metadata
 # TODO: create vm snapshot
 # TODO: backup rbd disk's of vm
 # TODO: remove old vm snapshot
 # TODO: how to handle proxmox snapshots (especially those including RAM)
+# TODO: migrate from str.format() to f'' (f-strings)
 
 from proxmoxer import ProxmoxAPI, logging
 import configparser
 import os.path
 import lib.helper as helper
 import re
+import lib.ceph as ceph
+from typing import List
+import time
+import random
 
 if not os.path.isfile('config/global.ini'):
     raise FileNotFoundError('config/global.ini')
@@ -19,6 +20,7 @@ if not os.path.isfile('config/global.ini'):
 config = configparser.ConfigParser()
 config.read('config/global.ini')
 servers = config['global']['proxmox_servers'].replace(' ', '').split(',')
+remote_connection_command = 'ssh ' + config['global']['ceph_backup_cluster_ssh_host'] + ' -T -o Compression=no -x '
 
 if helper.is_list_empty(servers):
     raise RuntimeError('no servers found in config')
@@ -33,8 +35,9 @@ storages_rbd = []
 storages_to_ignore = []
 tmp_storages = proxmox.storage.get(type='rbd')
 
-for item in config['global']['ignore_storages'].replace(' ', '').split(','):
-    storages_to_ignore.append(item)
+if 'ignore_storages' in config['global']:
+    for item in config['global']['ignore_storages'].replace(' ', '').split(','):
+        storages_to_ignore.append(item)
 
 for item in tmp_storages:
     if item['storage'] in storages_to_ignore:
@@ -154,7 +157,80 @@ del node
 del tmp_vms
 
 
+def map_rbd_image(pool_name: str, image: str):
+    ceph.map_rbd_image(pool_name, image)
+    mapped_path = ''
+    mapped_images_info = ceph.get_rbd_image_mapped_info()
+    for mapped_image in mapped_images_info:
+        if mapped_image['name'] == rbd_image_vm_metadata_name:
+            mapped_path = mapped_image['device']
+            break
+    if mapped_path == '':
+        raise RuntimeError(f'could not find mapped block-device of image {rbd_image_vm_metadata_name}')
+    del mapped_images_info
+    return mapped_path
+
+
+def mount_rbd_metadata_image(image: str, mapped_device_path: str):
+    helper.log_message('mount vm metadata filesystem: {0}'.format(image), helper.LOGLEVEL_DEBUG)
+    helper.exec_raw('mkdir -p /tmp/{0}'.format(image))
+    helper.exec_raw('mount {0} /tmp/{1}'.format(mapped_device_path, image))
+
+
 for vm in vms:
     if helper.is_list_empty(vm.rbd_disks):
         helper.log_message('ignore vm {0} (name={1}, number={2}), because it has no rbd disk to backup'.format(vm.id, vm.name, vm.number), helper.LOGLEVEL_DEBUG)
         continue
+
+    snapshot_name = config['global']['snapshot_name_prefix'] + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
+    rbd_image_vm_metadata_name = vm.id + '_vm_metadata'
+    helper.log_message(f'save current config into vm metadata image of vm {vm.id} (id={vm.number}, name={vm.name})', helper.LOGLEVEL_INFO)
+    backup_rbd_pool = config['global']['ceph_backup_pool']
+    is_vm_metadata_existing = ceph.is_rbd_image_existing(backup_rbd_pool, rbd_image_vm_metadata_name)
+    mapped_image_path = ''
+    if is_vm_metadata_existing:
+        # map vm metadata image
+        helper.log_message('map ceph metadata image {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_DEBUG)
+        mapped_image_path = map_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
+        # mount vm metadata image
+        mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
+    else:
+        # create vm metadata image
+        helper.log_message('create ceph metadata image for vm in ceph backup cluster: {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_INFO)
+        ceph.create_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name, config['global']['vm_metadata_image_size'])
+        time.sleep(1)
+        is_vm_metadata_existing = ceph.is_rbd_image_existing(backup_rbd_pool, rbd_image_vm_metadata_name)
+        if not is_vm_metadata_existing:
+            raise RuntimeError('ceph metadata image for vm is not existing right after creation, this may be a transient error: {0}'.format(rbd_image_vm_metadata_name))
+        if 'ceph_backup_disable_rbd_image_features_for_metadata' in config['global'] and len(config['global']['ceph_backup_disable_rbd_image_features_for_metadata']) > 0:
+            # disable metadata image features (if needed)
+            helper.exec_raw('rbd feature disable {0} {1}'.format(rbd_image_vm_metadata_name, ' '.join(config['global']['ceph_backup_disable_rbd_image_features_for_metadata'].replace(' ', '').split(','))))
+        # map metadata image
+        helper.log_message('map rbd vm metadata image {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_DEBUG)
+        mapped_image_path = map_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
+        # format metadata image
+        helper.log_message('format vm metadata image with ext4: {0}'.format(rbd_image_vm_metadata_name), helper.LOGLEVEL_DEBUG)
+        helper.exec_raw(f'mkfs.ext4 -L {rbd_image_vm_metadata_name[0:16]} {mapped_image_path}')
+        # mount metadata image
+        mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
+    del is_vm_metadata_existing
+
+    # save current config into metadata image
+    with open(f'/tmp/{rbd_image_vm_metadata_name}/{vm.number}.conf', 'w') as config_file:
+        print(vm.config, file=config_file)
+        # TODO: add hocking-system to call external scripts which may include more metadata
+        #       export variables using ENV
+    del config_file
+
+    # unmount vm metadata image
+    helper.log_message(f'unmount vm metadata filesystem {rbd_image_vm_metadata_name}', helper.LOGLEVEL_DEBUG)
+    helper.exec_raw(f'umount /tmp/{rbd_image_vm_metadata_name}')
+    helper.exec_raw(f'rmdir /tmp/{rbd_image_vm_metadata_name}')
+
+    # unmap rbd image
+    helper.log_message(f'unmap rbd vm metadata image {rbd_image_vm_metadata_name}', helper.LOGLEVEL_DEBUG)
+    ceph.unmap_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
+
+    # create snapshot of vm metadata image
+    ceph.create_rbd_snapshot(backup_rbd_pool, rbd_image_vm_metadata_name, new_snapshot_name=snapshot_name)
+    del rbd_image_vm_metadata_name
