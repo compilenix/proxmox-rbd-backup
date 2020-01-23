@@ -1,10 +1,8 @@
-# TODO: backup rbd disk's of vm
-# TODO: remove old vm snapshots
 # TODO: list vm's in backup
 # TODO: list backups of given vm
 # TODO: perform restore of given backup
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
-# TODO: how to handle proxmox snapshots (especially those including RAM)
+# TODO: how to handle proxmox snapshots (especially those including RAM)?
 # TODO: migrate from str.format() to f'' (f-strings)
 
 from proxmoxer import ProxmoxAPI, logging
@@ -71,7 +69,7 @@ class CephRbdImage:
         self.name = image
 
     def __str__(self):
-        return f'{self.pool}:{self.name}'
+        return f'{self.pool}/{self.name}'
 
 
 class VM:
@@ -195,9 +193,9 @@ def mount_rbd_metadata_image(image: str, mapped_device_path: str):
     exec_raw('mount {0} /tmp/{1}'.format(mapped_device_path, image))
 
 
-def create_vm_snapshot(vm_object: VM):
+def create_vm_snapshot(vm_object: VM, name: str):
     log_message(f'create vm snapshot via proxmox api for {vm_object}', LOGLEVEL_INFO)
-    results = proxmox.nodes(vm_object.node).qemu(vm_object.id).post('snapshot', snapname=snapshot_name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
+    results = proxmox.nodes(vm_object.node).qemu(vm_object.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
     if 'UPID' not in results:
         raise RuntimeError(f'unexpected result while creating proxmox vm snapshot of {vm_object} result: {results}')
     del results
@@ -206,16 +204,17 @@ def create_vm_snapshot(vm_object: VM):
     tries_attempted = tries
     succeed = False
     while not succeed and tries > 0:
+        time.sleep(1)
         tries -= 1
         results = proxmox.nodes(vm_object.node).qemu(vm_object.id).get('snapshot')
         for vm_state in results:
-            if 'name' in vm_state and vm_state['name'] == snapshot_name:
+            if 'name' in vm_state and vm_state['name'] == name:
                 succeed = True
                 break
     del tries, results, vm_state
 
     if not succeed:
-        raise RuntimeError(f'proxmox vm snapshot creation of {vm_object} tined out after {tries_attempted} seconds')
+        raise RuntimeError(f'proxmox vm snapshot creation of {vm_object} tined out after {tries_attempted} tries')
     log_message(f'snapshot creation for {vm_object} was successful', LOGLEVEL_DEBUG)
 
 
@@ -272,20 +271,73 @@ for vm in vms:
     ceph.create_rbd_snapshot(backup_rbd_pool, rbd_image_vm_metadata_name, new_snapshot_name=snapshot_name)
     del rbd_image_vm_metadata_name
 
-    existing_backup_snapshots = 0
+    # check for existing vm snapshot existence
+    existing_backup_snapshot_count = 0
     existing_backup_snapshot = ''
     result = proxmox.nodes(vm.node).qemu(vm.id).get('snapshot')
     for state in result:
         if 'name' in state and re.match(config['global']['snapshot_name_prefix'] + r'.+', state['name']):
             existing_backup_snapshot = state['name']
-            existing_backup_snapshots += 1
+            existing_backup_snapshot_count += 1
     del result, state
-    if existing_backup_snapshots > 1:
+    if existing_backup_snapshot_count > 1:
         # TODO: implement
         log_message(f'last backup is incomplete, re-processing', LOGLEVEL_WARN)
         raise RuntimeError(f'last backup is incomplete, re-processing. automatic repair not implemented, yet. Manual fixing required')
 
     # create vm snapshot via proxmox api
-    create_vm_snapshot(vm)
+    create_vm_snapshot(vm, snapshot_name)
 
-    break
+    # backup rbd disk's of vm
+    for disk in vm.rbd_disks:
+        # wait for snapshot creation completion
+        tries = 60
+        tries_attempted = tries
+        succeed = False
+        while not succeed and tries > 0:
+            log_message(f'wait for snapshot creation completion of {vm} -> {disk}@{snapshot_name}. {tries} tries left oft {tries_attempted}', LOGLEVEL_DEBUG)
+            time.sleep(1)
+            tries -= 1
+            results = ceph.get_rbd_snapshots_by_prefix(disk.pool, disk.name, config['global']['snapshot_name_prefix'], remote_connection_command)
+            for snap in results:
+                if 'name' in snap and snap['name'] == snapshot_name:
+                    log_message(f'snapshot of {vm} -> {disk}@{snapshot_name} found', LOGLEVEL_DEBUG)
+                    succeed = True
+                    break
+        if not succeed:
+            raise RuntimeError(f'waiting for ceph rbd snapshot creation completion of {vm} -> {disk} tined out after {tries_attempted} tries')
+        del tries, results, snap, succeed, tries_attempted
+
+        # perform initial backup
+        if existing_backup_snapshot_count == 0:
+            log_message(f'initial backup, starting full copy of {vm} -> {disk}', LOGLEVEL_INFO)
+            image_size = exec_parse_json(f'{remote_connection_command} rbd info {disk} --format json')['size']
+            exec_raw(f'/bin/bash -c set -o pipefail; {remote_connection_command} "rbd export --no-progress {disk}@{snapshot_name} -" | pv --rate --bytes --progress --timer --eta --size {image_size} | rbd import --no-progress - {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}')
+            ceph.create_rbd_snapshot(backup_rbd_pool, f'{vm.uuid}-{disk.pool}-{disk.name}', new_snapshot_name=snapshot_name)
+            log_message(f'initial backup of {vm} -> {disk} complete', LOGLEVEL_INFO)
+            del image_size
+
+        if existing_backup_snapshot_count == 1:
+            log_message(f'incremental backup, starting for {vm} -> {disk}', LOGLEVEL_INFO)
+            whole_object_command = ''
+            if 'enable_intra_object_delta_transfer' in config['global'] and not config['global'].getboolean('enable_intra_object_delta_transfer'):
+                whole_object_command = '--whole-object'
+            exec_raw(f'/bin/bash -c set -o pipefail; {remote_connection_command} "rbd export-diff --no-progress {whole_object_command} --from-snap {existing_backup_snapshot} {disk}@{snapshot_name} -" | pv --rate --bytes --timer | rbd import-diff --no-progress - {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}')
+            log_message(f'incremental backup of {vm} -> {disk} complete', LOGLEVEL_INFO)
+            del whole_object_command
+
+        # check if image and snapshot does exist on backup cluster
+        log_message(f'check if image and snapshot does exist on backup cluster for {vm} -> {vm.uuid}-{disk.pool}-{disk.name}@{snapshot_name}', LOGLEVEL_DEBUG)
+        results = ceph.get_rbd_snapshots_by_prefix(backup_rbd_pool, f'{vm.uuid}-{disk.pool}-{disk.name}', config['global']['snapshot_name_prefix'])
+        succeed = False
+        for snap in results:
+            if 'name' in snap and snap['name'] == snapshot_name:
+                log_message(f'snapshot {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}@{snapshot_name} found', LOGLEVEL_DEBUG)
+                succeed = True
+        if not succeed:
+            raise RuntimeError('image and snapshot does exist on backup cluster')
+        del results, succeed, snap
+
+    # remove old vm snapshot
+    if existing_backup_snapshot_count == 1:
+        result = proxmox.nodes(vm.node).qemu(vm.id).snapshot(existing_backup_snapshot).delete()
