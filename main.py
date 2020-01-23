@@ -24,10 +24,11 @@ if not os.path.isfile('config/global.ini'):
 config = configparser.ConfigParser()
 config.read('config/global.ini')
 servers = config['global']['proxmox_servers'].replace(' ', '').split(',')
-remote_connection_command = 'ssh ' + config['global']['ceph_backup_cluster_ssh_host'] + ' -T -o Compression=no -x '
 
 if is_list_empty(servers):
     raise RuntimeError('no servers found in config')
+
+remote_connection_command = f'ssh {config["global"]["proxmox_ssh_user"]}@{servers[0]} -T -o Compression=no -x'
 
 LOGLEVEL = LOGLEVEL_DEBUG
 lib.helper.LOGLEVEL = LOGLEVEL
