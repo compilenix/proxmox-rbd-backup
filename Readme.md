@@ -2,6 +2,8 @@
 - python3
 - pip3
 - bash
+- pv
+- ssh
 - ceph nautilus (or newer)
 - ceph tools
     - ceph
