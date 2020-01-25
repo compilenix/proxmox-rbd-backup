@@ -1,6 +1,7 @@
 import sys
 import subprocess
 import json
+from datetime import datetime
 
 
 def is_list_empty(items) -> bool:
@@ -27,6 +28,7 @@ LOGLEVEL = LOGLEVEL_INFO
 def log_message(message: str, level: int) -> None:
     if LOGLEVEL > level:
         return
+    message = f'[{datetime.now()}] {message}'
     if level == LOGLEVEL_DEBUG:
         print_std_err(message)
     else:
@@ -42,11 +44,11 @@ def sizeof_fmt(num: float, suffix: str = 'B') -> str:
 
 
 def exec_raw(command: str) -> str:
-    log_message('exec command "' + command + '"', LOGLEVEL_DEBUG)
+    log_message(f'exec command "{command}"', LOGLEVEL_DEBUG)
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     process.wait()
     if process.returncode != 0:
-        raise RuntimeError('command failed with code: ' + str(process.returncode))
+        raise RuntimeError(f'command failed with code: {process.returncode}')
     return str(process.stdout.read().decode("utf-8")).strip("\n")
 
 

@@ -3,7 +3,6 @@
 # TODO: perform restore of given backup
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
 # TODO: how to handle proxmox snapshots (especially those including RAM)?
-# TODO: migrate from str.format() to f'' (f-strings)
 
 from proxmoxer import ProxmoxAPI, logging
 import configparser
@@ -46,7 +45,7 @@ if 'ignore_storages' in config['global']:
 
 for item in tmp_storages:
     if item['storage'] in storages_to_ignore:
-        log_message('ignore proxmox storage {0}'.format(item['storage']), LOGLEVEL_DEBUG)
+        log_message(f'ignore proxmox storage {item["storage"]}', LOGLEVEL_DEBUG)
         continue
     if 'images' in item['content']:
         storages_rbd.append({
@@ -88,7 +87,7 @@ class VM:
 log_message('get vm\'s...', LOGLEVEL_INFO)
 tmp_vms = []
 for node in nodes:
-    log_message('get vm\'s from node {0}'.format(node['node']), LOGLEVEL_INFO)
+    log_message(f'get vm\'s from node {node["node"]}', LOGLEVEL_INFO)
     tmp_vms = proxmox.nodes(node['node']).qemu.get()
     tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
     for vm in tmp_vms:
@@ -101,11 +100,11 @@ for node in nodes:
         vm_item.config = ''
         vm_item.uuid = ''
 
-        log_message('found vm {0} with name {1}'.format(vm_item.id, vm_item.name), LOGLEVEL_DEBUG)
+        log_message(f'found vm {vm_item.id} with name {vm_item.name}', LOGLEVEL_DEBUG)
 
         # check if this vm should be excluded according to config
         if vm_item.id in config and 'ignore' in config[vm_item.id] and config[vm_item.id].getboolean('ignore'):
-            log_message('ignore vm as requested by config [{0} (name={1})] -> \"ignore\": {2}'.format(vm_item.id, vm_item.name, config[vm_item.id].getboolean('ignore')), LOGLEVEL_DEBUG)
+            log_message(f'ignore vm as requested by config [{vm_item.id} (name={vm_item.name})] -> \"ignore\": {config[vm_item.id].getboolean("ignore")}', LOGLEVEL_DEBUG)
             continue
 
         # format and add vm config
@@ -125,7 +124,7 @@ for node in nodes:
                         found_uuid = True
                         break
                 if not found_uuid:
-                    raise RuntimeError('could not find uuid of vm {0} in config property \"smbios1\"'.format(vm_item.id))
+                    raise RuntimeError(f'could not find uuid of vm {vm_item.id} in config property \"smbios1\"')
                 vm_item.uuid = tmp_smbios1
                 del tmp_smbios1
                 del found_uuid
@@ -158,15 +157,15 @@ for node in nodes:
             if vm_item.uuid in config and 'ignore_disks' in config[vm_item.uuid]:
                 disks_to_ignore = config[vm_item.uuid]['ignore_disks'].replace(' ', '').split(',')
             if disk in disks_to_ignore:
-                log_message('ignore rbd image: {0} as requested by config [{1} (name={2}, number={3})] -> \"ignore_disks\": {4}'.format(disk, vm_item.uuid, vm_item.name, vm_item.id, ', '.join(disks_to_ignore)), LOGLEVEL_DEBUG)
+                log_message(f'ignore rbd image: {disk} as requested by config [{vm_item.uuid} (name={vm_item.name}, id={vm_item.id})] -> \"ignore_disks\": {", ".join(disks_to_ignore)}', LOGLEVEL_DEBUG)
                 vm_item.rbd_disks.remove(disk)
             del disks_to_ignore
         del disk
 
         vms.append(vm_item)
         del vm_item
-    log_message('found {0} vm\'s on {1}'.format(len(tmp_vms), node['node']), LOGLEVEL_INFO)
-log_message('found a total of {0} vm\'s on {1} nodes'.format(len(vms), len(nodes)), LOGLEVEL_INFO)
+    log_message(f'found {len(tmp_vms)} vm\'s on {node["node"]}', LOGLEVEL_INFO)
+log_message(f'found a total of {len(vms)} vm\'s on {len(nodes)} nodes', LOGLEVEL_INFO)
 del vm
 del item
 del node
@@ -188,9 +187,9 @@ def map_rbd_image(pool_name: str, image: str):
 
 
 def mount_rbd_metadata_image(image: str, mapped_device_path: str):
-    log_message('mount vm metadata filesystem: {0}'.format(image), LOGLEVEL_DEBUG)
-    exec_raw('mkdir -p /tmp/{0}'.format(image))
-    exec_raw('mount {0} /tmp/{1}'.format(mapped_device_path, image))
+    log_message(f'mount vm metadata filesystem: {image}', LOGLEVEL_DEBUG)
+    exec_raw(f'mkdir -p /tmp/{image}')
+    exec_raw(f'mount {mapped_device_path} /tmp/{image}')
 
 
 def create_vm_snapshot(vm_object: VM, name: str):
@@ -220,7 +219,7 @@ def create_vm_snapshot(vm_object: VM, name: str):
 
 for vm in vms:
     if is_list_empty(vm.rbd_disks):
-        log_message('ignore vm {0} (name={1}, number={2}), because it has no rbd disk to backup'.format(vm.uuid, vm.name, vm.id), LOGLEVEL_DEBUG)
+        log_message(f'ignore vm {vm.uuid} (name={vm.name}, id={vm.id}), because it has no rbd disk to backup', LOGLEVEL_DEBUG)
         continue
 
     snapshot_name = config['global']['snapshot_name_prefix'] + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
@@ -240,10 +239,10 @@ for vm in vms:
         ceph.create_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name, config['global']['vm_metadata_image_size'])
         is_vm_metadata_existing = ceph.is_rbd_image_existing(backup_rbd_pool, rbd_image_vm_metadata_name)
         if not is_vm_metadata_existing:
-            raise RuntimeError('ceph metadata image for vm is not existing right after creation, this may be a transient error: {0}'.format(rbd_image_vm_metadata_name))
+            raise RuntimeError(f'ceph metadata image for vm is not existing right after creation, this may be a transient error: {rbd_image_vm_metadata_name}')
         if 'ceph_backup_disable_rbd_image_features_for_metadata' in config['global'] and len(config['global']['ceph_backup_disable_rbd_image_features_for_metadata']) > 0:
             # disable metadata image features (if needed)
-            exec_raw('rbd feature disable {0} {1}'.format(rbd_image_vm_metadata_name, ' '.join(config['global']['ceph_backup_disable_rbd_image_features_for_metadata'].replace(' ', '').split(','))))
+            exec_raw(f'rbd feature disable {rbd_image_vm_metadata_name} {" ".join(config["global"]["ceph_backup_disable_rbd_image_features_for_metadata"].replace(" ", "").split(","))}')
         # map metadata image
         mapped_image_path = map_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name)
         # format metadata image
@@ -337,6 +336,14 @@ for vm in vms:
         if not succeed:
             raise RuntimeError('image and snapshot does exist on backup cluster')
         del results, succeed, snap
+
+    # make sure the current proxmox api token is still valid
+    try:
+        nodes = proxmox.nodes.get()
+    except:
+        log_message('proxmox session expired, try to renew session', LOGLEVEL_INFO)
+        proxmox = ProxmoxAPI(servers[0], user=config['global']['user'], password=config['global']['password'], verify_ssl=config['global'].getboolean('verify_ssl'))
+        nodes = proxmox.nodes.get()
 
     # remove old vm snapshot
     if existing_backup_snapshot_count == 1:

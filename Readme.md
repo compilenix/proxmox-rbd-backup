@@ -1,5 +1,5 @@
 # Requirements
-- python3
+- python3.7+
 - pip3
 - bash
 - pv
