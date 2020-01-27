@@ -2,6 +2,8 @@ import sys
 import subprocess
 import json
 from datetime import datetime
+import lib.ceph as ceph
+import lib.proxmox as proxmox
 
 
 def is_list_empty(items) -> bool:
@@ -54,3 +56,11 @@ def exec_raw(command: str) -> str:
 
 def exec_parse_json(command: str):
     return json.loads(exec_raw(command), encoding='UTF-8')
+
+
+def rbd_image_from_proxmox_disk(disk: proxmox.Disk):
+    return ceph.RbdImage(disk.ceph_pool, disk.name)
+
+
+def proxmox_disk_from_rbd_image(disk: ceph.RbdImage):
+    return proxmox.Disk(disk.pool, disk.name)
