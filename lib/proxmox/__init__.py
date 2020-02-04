@@ -1,21 +1,22 @@
 import re
-from lib.helper import log_message, LOGLEVEL_DEBUG, LOGLEVEL_INFO
-from proxmoxer import ProxmoxAPI, logging
+from ..helper import Cacheable
+from ..helper import Log as log
+from .core import ProxmoxAPI
+import time
 
 
-class Node:
-    name: str
+class Node(Cacheable):
     id: int
 
-    def __init__(self):
-        self.id = 0
-        self.name = ''
+    def __init__(self, node_id):
+        super().__init__()
+        self.id = node_id
 
     def __str__(self):
-        return self.name
+        return self.id
 
 
-class Storage:
+class Storage(Cacheable):
     pool: str
     content: str
     type: str
@@ -25,6 +26,7 @@ class Storage:
     digest: str
 
     def __init__(self, name, storage_type='', shared=0, content='', pool='', krbd=0, digest=''):
+        super().__init__()
         self.name = name
         self.shared = True if shared == 1 else 0
         self.type = storage_type
@@ -37,11 +39,12 @@ class Storage:
         return self.name
 
 
-class Disk:
+class Disk(Cacheable):
     name: str
     storage: Storage
 
     def __init__(self, image: str, storage):
+        super().__init__()
         self.storage: Storage = storage
         self.name = image
 
@@ -49,7 +52,7 @@ class Disk:
         return f'{self.storage}:{self.name}'
 
 
-class VM:
+class VM(Cacheable):
     status: bool
     __rbd_disks: [Disk]
     __config: str
@@ -59,6 +62,7 @@ class VM:
     id: int
 
     def __init__(self, vm_id=0, uuid='', name='', node=None, rbd_disks=None, status=''):
+        super().__init__()
         self.id = vm_id
         self.uuid = uuid
         self.name = name
@@ -96,7 +100,15 @@ class VM:
                 self.__config += f'{item["key"]}: {item["value"]}\n'
         self.__config = f'{description}{self.__config}'
 
-    def update_rbd_disks(self, storages: [Storage], config: str = None):
+    def get_config(self):
+        return self.__config
+
+    def update_rbd_disks(self, storages: [Storage], disks_to_ignore=None, config: str = None):
+        """vm.uuid has to be defined"""
+        if not self.uuid:
+            raise RuntimeError('self.uuid is empty, this is required to filter excluded disks for this vm (specified in config)')
+        if disks_to_ignore is None:
+            disks_to_ignore = []
         if not self.__config and not config:
             raise RuntimeError('config is None')
 
@@ -111,53 +123,20 @@ class VM:
                 disk_identifier = line.split(',')[0]
                 image = disk_identifier.replace(storage.name, storage.pool).split(':')[1]
                 disk = Disk(image, storage)
-                log_message(f'found proxmox vm disk: {disk}', LOGLEVEL_DEBUG)
+                if disk in disks_to_ignore:
+                    log.debug(f'ignore proxmox vm disk: {disk} as requested by config [{self.uuid} (name={self.name}, id={self.id})] -> \"ignore_disks\": {", ".join(disks_to_ignore)}')
+                    continue
+                log.debug(f'found proxmox vm disk: {disk}')
                 disks.append(disk)
         self.__rbd_disks = disks
 
-    def update_uuid(self, config: str = None):
-        if not self.__config and not config:
-            raise RuntimeError('config is None')
-
-        config = config if config else self.__config
-        for line in config.split('\n'):
-            if not line.startswith('smbios1'):
-                continue
-            smbios1 = line.split(',')
-            found_uuid = False
-            for smbios_part in smbios1:
-                if smbios_part.startswith('uuid='):
-                    smbios1 = smbios_part[5::]
-                    found_uuid = True
-                    break
-            if not found_uuid:
-                raise RuntimeError(f'could not find uuid of vm {self.id} in config property \"smbios1\"')
-            self.uuid = smbios1
-
-
-class ProxmoxApiSession:
-    host: str
-    verify_ssl: bool
-    password: str
-    user: str
-    servers: [str]
-    __session: ProxmoxAPI
-
-    def __init__(self, servers, user, password, host, verify_ssl=True):
-        self.servers = servers if servers else []
-        self.user = user
-        self.password = password
-        self.host = host
-        self.verify_ssl = verify_ssl
-        self.__session = self.__init_session()
-
-    def __init_session(self):
-        return ProxmoxAPI(self.host, 'https', user=self.user, password=self.password, verify_ssl=self.verify_ssl)
-
-    # TODO: continue here... create abstraction for ProxmoxAPI requests to intercept api session timeout
+    def get_rbd_disks(self):
+        return self.__rbd_disks
 
 
 class Proxmox:
+    vms: [VM]
+    storages: [Storage]
     nodes: [Node]
     verify_ssl: bool
     password: str
@@ -165,28 +144,80 @@ class Proxmox:
     servers: [str]
     session: ProxmoxAPI
 
-    def __init__(self):
-        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
-        self.servers = []
-        self.user = ''
-        self.password = ''
-        self.verify_ssl = True
+    def __init__(self, servers, username, password, verify_ssl=True):
+        self.servers = servers if servers else []
+        self.user = username
+        self.password = password
+        self.verify_ssl = verify_ssl
+        self.session = ProxmoxAPI(self.servers[0], 'https', user=self.user, password=self.password, verify_ssl=self.verify_ssl)
         self.nodes = []
+        self.storages = []
+        self.vms = []
+
+    def update_nodes(self):
+        tmp_nodes = self.session.nodes.get()
+        tmp_nodes = sorted(tmp_nodes, key=lambda x: x['node'])
+        self.nodes = []
+        for node in tmp_nodes:
+            self.nodes.append(Node(node['node']))
+
+    def get_nodes(self):
+        return self.nodes
+
+    def update_storages(self, storages_to_ignore=None):
+        if storages_to_ignore is None:
+            storages_to_ignore = []
+        tmp_storages = self.session.storage.get(type='rbd')
+        tmp_storages = sorted(tmp_storages, key=lambda x: x['storage'])
+        self.storages = []
+        for storage in tmp_storages:
+            if storage['storage'] in storages_to_ignore:
+                log.debug(f'ignore proxmox storage {storage["storage"]}')
+                continue
+            if 'images' in storage['content']:
+                self.storages.append(Storage(name=storage['storage'], storage_type=storage['type'], shared=storage['shared'], content=storage['content'], pool=storage['pool'], krbd=int(storage['krbd']), digest=storage['digest']))
+
+    def get_storages(self):
+        return self.storages
+
+    def update_vms(self, vms_to_ignore=None):
+        if vms_to_ignore is None:
+            vms_to_ignore = []
+        self.vms = []
+        log.info('get vm\'s...')
+        for node in self.nodes:
+            log.info(f'get vm\'s from node {node.id}')
+            tmp_vms = self.session.nodes(node.id).qemu.get()
+            tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
+            for vm in tmp_vms:
+                tmp_vm = VM(vm['vmid'], name=vm['name'], node=node, status=vm['status'])
+                log.debug(f'found vm {tmp_vm.id} with name {tmp_vm.name}')
+                tmp_vm.set_config(self.session.nodes(node.id).qemu(tmp_vm.id).get('pending'))
+
+                # check if this vm should be excluded according to config
+                if tmp_vm.uuid in vms_to_ignore:
+                    log.debug(f'ignore vm as requested ({tmp_vm})')
+                    continue
+
+                self.vms.append(tmp_vm)
+
+    def get_vms(self):
+        return self.vms
 
     def create_vm_snapshot(self, vm: VM, name: str):
-        log_message(f'create vm snapshot via proxmox api for {vm}', LOGLEVEL_INFO)
-        results = proxmox.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
+        log.info(f'create vm snapshot via proxmox api for {vm}')
+        results = self.session.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
         if 'UPID' not in results:
             raise RuntimeError(f'unexpected result while creating proxmox vm snapshot of {vm} result: {results}')
         del results
 
-        tries = 60
+        tries = 500
         tries_attempted = tries
         succeed = False
         while not succeed and tries > 0:
             time.sleep(1)
             tries -= 1
-            results = proxmox.nodes(vm.node).qemu(vm.id).get('snapshot')
+            results = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
             for vm_state in results:
                 if 'name' in vm_state and vm_state['name'] == name:
                     succeed = True
@@ -195,4 +226,7 @@ class Proxmox:
 
         if not succeed:
             raise RuntimeError(f'proxmox vm snapshot creation of {vm} tined out after {tries_attempted} tries')
-        log_message(f'snapshot creation for {vm} was successful', LOGLEVEL_DEBUG)
+        log.debug(f'snapshot creation for {vm} was successful')
+
+    def delete_vm_snapshot(self, vm: VM, name: str):
+        self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()

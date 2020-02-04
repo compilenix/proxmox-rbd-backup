@@ -1,9 +1,7 @@
-import sys
 import subprocess
 import json
+import sys
 from datetime import datetime
-import lib.ceph as ceph
-import lib.proxmox as proxmox
 
 
 def is_list_empty(items) -> bool:
@@ -17,24 +15,50 @@ def is_list_empty(items) -> bool:
     return False
 
 
-def print_std_err(message: str) -> None:
-    print(message, file=sys.stderr, flush=True)
-
-
 LOGLEVEL_DEBUG = 0
 LOGLEVEL_INFO = 1
 LOGLEVEL_WARN = 2
-LOGLEVEL = LOGLEVEL_INFO
+LOGLEVEL_ERR = 3
 
 
-def log_message(message: str, level: int) -> None:
-    if LOGLEVEL > level:
-        return
-    message = f'[{datetime.now()}] {message}'
-    if level == LOGLEVEL_DEBUG:
-        print_std_err(message)
-    else:
-        print(message, flush=True)
+class Log:
+    _LOGLEVEL = LOGLEVEL_INFO
+
+    @staticmethod
+    def set_loglevel(level: int):
+        if level not in range(0, 3):
+            raise NotImplementedError(f'log level is out of range')
+        Log._LOGLEVEL = level
+
+    @staticmethod
+    def print_std_err(message: str) -> None:
+        print(message, file=sys.stderr, flush=True)
+
+    @staticmethod
+    def message(message: str, level: int) -> None:
+        if Log._LOGLEVEL > level:
+            return
+        message = f'[{datetime.now()}] {message}'
+        if level == LOGLEVEL_DEBUG or level == LOGLEVEL_ERR:
+            Log.print_std_err(message)
+        else:
+            print(message, flush=True)
+
+    @staticmethod
+    def debug(message: str):
+        Log.message(message, LOGLEVEL_DEBUG)
+
+    @staticmethod
+    def info(message: str):
+        Log.message(message, LOGLEVEL_INFO)
+
+    @staticmethod
+    def warn(message: str):
+        Log.message(message, LOGLEVEL_WARN)
+
+    @staticmethod
+    def error(message: str):
+        Log.message(message, LOGLEVEL_ERR)
 
 
 def sizeof_fmt(num: float, suffix: str = 'B') -> str:
@@ -46,7 +70,7 @@ def sizeof_fmt(num: float, suffix: str = 'B') -> str:
 
 
 def exec_raw(command: str) -> str:
-    log_message(f'exec command "{command}"', LOGLEVEL_DEBUG)
+    Log.debug(f'exec command "{command}"')
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     process.wait()
     if process.returncode != 0:
@@ -58,9 +82,21 @@ def exec_parse_json(command: str):
     return json.loads(exec_raw(command), encoding='UTF-8')
 
 
-def rbd_image_from_proxmox_disk(disk: proxmox.Disk):
+def rbd_image_from_proxmox_disk(disk):
+    import lib.ceph as ceph
     return ceph.RbdImage(disk.ceph_pool, disk.name)
 
 
-def proxmox_disk_from_rbd_image(disk: ceph.RbdImage):
+def proxmox_disk_from_rbd_image(disk):
+    import lib.proxmox as proxmox
     return proxmox.Disk(disk.pool, disk.name)
+
+
+class Cacheable:
+    cached_since: datetime
+
+    def __init__(self):
+        self.reset_cached_since()
+
+    def reset_cached_since(self):
+        self.cached_since = datetime.now()

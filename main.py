@@ -4,13 +4,13 @@
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
 # TODO: how to handle proxmox snapshots (especially those including RAM)?
 
-from proxmoxer import ProxmoxAPI, logging
 import configparser
 import os.path
 from lib.helper import *
-import lib.helper
+from lib.helper import Log as log
+from lib.proxmox import VM, Storage, Node, Disk, Proxmox
 import re
-import lib.ceph as ceph
+from lib.ceph import Ceph
 from typing import List
 import random
 import time
@@ -18,6 +18,7 @@ import time
 if not os.path.isfile('config/global.ini'):
     raise FileNotFoundError('config/global.ini')
 
+ceph = Ceph()
 config = configparser.ConfigParser()
 config.read('config/global.ini')
 servers = config['global']['proxmox_servers'].replace(' ', '').split(',')
@@ -27,67 +28,26 @@ if is_list_empty(servers):
 
 remote_connection_command = f'ssh {config["global"]["proxmox_ssh_user"]}@{servers[0]} -T -o Compression=no -x'
 
-LOGLEVEL = LOGLEVEL_DEBUG
-lib.helper.LOGLEVEL = LOGLEVEL
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
-proxmox = ProxmoxAPI(servers[0], user=config['global']['user'], password=config['global']['password'], verify_ssl=config['global'].getboolean('verify_ssl'))
+log.set_loglevel(LOGLEVEL_DEBUG)
+proxmox = Proxmox(servers, username=config['global']['user'], password=config['global']['password'], verify_ssl=config['global'].getboolean('verify_ssl'))
+proxmox.update_nodes()
 
-nodes = proxmox.nodes.get()
-nodes = sorted(nodes, key=lambda x: x['node'])
-vms = []
-storages_rbd = []
 storages_to_ignore = []
-tmp_storages = proxmox.storage.get(type='rbd')
-
+vms_to_ignore = []
 if 'ignore_storages' in config['global']:
     for item in config['global']['ignore_storages'].replace(' ', '').split(','):
         storages_to_ignore.append(item)
+for section in config:
+    if 'ignore' in config[section] and config[section]['ignore']:
+        vms_to_ignore.append(section)
 
-for item in tmp_storages:
-    if item['storage'] in storages_to_ignore:
-        log_message(f'ignore proxmox storage {item["storage"]}', LOGLEVEL_DEBUG)
-        continue
-    if 'images' in item['content']:
-        storages_rbd.append({
-            'name': item['storage'],
-            'pool': item['pool']
-        })
-del tmp_storages
+proxmox.update_storages(storages_to_ignore)
+proxmox.update_vms(vms_to_ignore)
 
-
-def is_rbd_disk(name: str) -> object or None:
-    for storage_rbd in storages_rbd:
-        if name.startswith(storage_rbd['name'] + ':vm-'):
-            return storage_rbd
-    return None
-
-
-class CephRbdImage:
-    def __init__(self, pool_name: str, image: str):
-        self.pool = pool_name
-        self.name = image
-
-    def __str__(self):
-        return f'{self.pool}/{self.name}'
-
-
-class VM:
-    def __init__(self):
-        self.id = 0
-        self.uuid = ''
-        self.name = ''
-        self.node = ''
-        self.config = ''
-        self.rbd_disks = []  # type: List[CephRbdImage]
-
-    def __str__(self):
-        return f'{self.name} (id={self.id}, uuid={self.uuid})'
-
-
-log_message('get vm\'s...', LOGLEVEL_INFO)
+log.info('get vm\'s...')
 tmp_vms = []
 for node in nodes:
-    log_message(f'get vm\'s from node {node["node"]}', LOGLEVEL_INFO)
+    log.info(f'get vm\'s from node {node["node"]}')
     tmp_vms = proxmox.nodes(node['node']).qemu.get()
     tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
     for vm in tmp_vms:
@@ -96,15 +56,15 @@ for node in nodes:
         vm_item.node = node['node']
         vm_item.name = vm['name']
         vm_item.status = vm['status']
-        vm_item.rbd_disks = []
+        vm_item.__rbd_disks = []
         vm_item.config = ''
         vm_item.uuid = ''
 
-        log_message(f'found vm {vm_item.id} with name {vm_item.name}', LOGLEVEL_DEBUG)
+        log.debug(f'found vm {vm_item.id} with name {vm_item.name}')
 
         # check if this vm should be excluded according to config
         if vm_item.id in config and 'ignore' in config[vm_item.id] and config[vm_item.id].getboolean('ignore'):
-            log_message(f'ignore vm as requested by config [{vm_item.id} (name={vm_item.name})] -> \"ignore\": {config[vm_item.id].getboolean("ignore")}', LOGLEVEL_DEBUG)
+            log.debug(f'ignore vm as requested by config [{vm_item.id} (name={vm_item.name})] -> \"ignore\": {config[vm_item.id].getboolean("ignore")}')
             continue
 
         # format and add vm config
@@ -134,11 +94,11 @@ for node in nodes:
                 storage = is_rbd_disk(item['value'])
                 if storage is not None:
                     disk_name = item['value'].split(',')[0]
-                    log_message('found proxmox vm disk: ' + disk_name, LOGLEVEL_DEBUG)
+                    log.debug('found proxmox vm disk: ' + disk_name)
                     # can't check if disk should be ignored because vm uuid may not be preset, yet
                     pool = disk_name.replace(storage['name'], storage['pool']).split(':')[0]
                     image_name = disk_name.split(':')[1]
-                    vm_item.rbd_disks.append(CephRbdImage(pool, image_name))
+                    vm_item.__rbd_disks.append(ceph.CephRbdImage(pool, image_name))
                     del disk_name
                     del pool
                     del image_name
@@ -152,20 +112,20 @@ for node in nodes:
         del cfg
         vm_item.config = f'{description}{vm_item.config}'
 
-        for disk in vm_item.rbd_disks:
+        for disk in vm_item.__rbd_disks:
             disks_to_ignore = []  # type: List[str]
             if vm_item.uuid in config and 'ignore_disks' in config[vm_item.uuid]:
                 disks_to_ignore = config[vm_item.uuid]['ignore_disks'].replace(' ', '').split(',')
             if disk in disks_to_ignore:
-                log_message(f'ignore rbd image: {disk} as requested by config [{vm_item.uuid} (name={vm_item.name}, id={vm_item.id})] -> \"ignore_disks\": {", ".join(disks_to_ignore)}', LOGLEVEL_DEBUG)
-                vm_item.rbd_disks.remove(disk)
+                log.debug(f'ignore rbd image: {disk} as requested by config [{vm_item.uuid} (name={vm_item.name}, id={vm_item.id})] -> \"ignore_disks\": {", ".join(disks_to_ignore)}')
+                vm_item.__rbd_disks.remove(disk)
             del disks_to_ignore
         del disk
 
         vms.append(vm_item)
         del vm_item
-    log_message(f'found {len(tmp_vms)} vm\'s on {node["node"]}', LOGLEVEL_INFO)
-log_message(f'found a total of {len(vms)} vm\'s on {len(nodes)} nodes', LOGLEVEL_INFO)
+    log.info(f'found {len(tmp_vms)} vm\'s on {node["node"]}')
+log.info(f'found a total of {len(vms)} vm\'s on {len(nodes)} nodes')
 del vm
 del item
 del node
@@ -187,44 +147,19 @@ def map_rbd_image(pool_name: str, image: str):
 
 
 def mount_rbd_metadata_image(image: str, mapped_device_path: str):
-    log_message(f'mount vm metadata filesystem: {image}', LOGLEVEL_DEBUG)
+    log.debug(f'mount vm metadata filesystem: {image}')
     exec_raw(f'mkdir -p /tmp/{image}')
     exec_raw(f'mount {mapped_device_path} /tmp/{image}')
 
 
-def create_vm_snapshot(vm_object: VM, name: str):
-    log_message(f'create vm snapshot via proxmox api for {vm_object}', LOGLEVEL_INFO)
-    results = proxmox.nodes(vm_object.node).qemu(vm_object.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
-    if 'UPID' not in results:
-        raise RuntimeError(f'unexpected result while creating proxmox vm snapshot of {vm_object} result: {results}')
-    del results
-
-    tries = 60
-    tries_attempted = tries
-    succeed = False
-    while not succeed and tries > 0:
-        time.sleep(1)
-        tries -= 1
-        results = proxmox.nodes(vm_object.node).qemu(vm_object.id).get('snapshot')
-        for vm_state in results:
-            if 'name' in vm_state and vm_state['name'] == name:
-                succeed = True
-                break
-    del tries, results, vm_state
-
-    if not succeed:
-        raise RuntimeError(f'proxmox vm snapshot creation of {vm_object} tined out after {tries_attempted} tries')
-    log_message(f'snapshot creation for {vm_object} was successful', LOGLEVEL_DEBUG)
-
-
 for vm in vms:
-    if is_list_empty(vm.rbd_disks):
-        log_message(f'ignore vm {vm.uuid} (name={vm.name}, id={vm.id}), because it has no rbd disk to backup', LOGLEVEL_DEBUG)
+    if is_list_empty(vm.__rbd_disks):
+        log.debug(f'ignore vm {vm.uuid} (name={vm.name}, id={vm.id}), because it has no rbd disk to backup')
         continue
 
     snapshot_name = config['global']['snapshot_name_prefix'] + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
     rbd_image_vm_metadata_name = vm.uuid + '_vm_metadata'
-    log_message(f'save current config into vm metadata image of vm {vm.uuid} (id={vm.id}, name={vm.name})', LOGLEVEL_INFO)
+    log.info(f'save current config into vm metadata image of vm {vm.uuid} (id={vm.id}, name={vm.name})')
     backup_rbd_pool = config['global']['ceph_backup_pool']
     is_vm_metadata_existing = ceph.is_rbd_image_existing(backup_rbd_pool, rbd_image_vm_metadata_name)
     mapped_image_path = ''
@@ -235,7 +170,7 @@ for vm in vms:
         mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
     else:
         # create vm metadata image
-        log_message('metadata image for vm not existing; creating...', LOGLEVEL_INFO)
+        log.info('metadata image for vm not existing; creating...')
         ceph.create_rbd_image(backup_rbd_pool, rbd_image_vm_metadata_name, config['global']['vm_metadata_image_size'])
         is_vm_metadata_existing = ceph.is_rbd_image_existing(backup_rbd_pool, rbd_image_vm_metadata_name)
         if not is_vm_metadata_existing:
@@ -252,11 +187,10 @@ for vm in vms:
     del is_vm_metadata_existing
 
     # save current config into metadata image
-    log_message(f'save current config into metadata image -> /tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf', LOGLEVEL_DEBUG)
+    log.debug(f'save current config into metadata image -> /tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf')
     with open(f'/tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf', 'w') as config_file:
         print(vm.config, file=config_file)
-        # TODO: add hocking-system to call external scripts which may include more metadata
-        #       export variables using ENV
+        # TODO: add hooking-system to call external scripts which may include more metadata export variables using ENV
     del config_file
 
     # unmount vm metadata image
@@ -281,26 +215,26 @@ for vm in vms:
     del result, state
     if existing_backup_snapshot_count > 1:
         # TODO: implement
-        log_message(f'last backup is incomplete, re-processing', LOGLEVEL_WARN)
+        log.warn(f'last backup is incomplete, re-processing')
         raise RuntimeError(f'last backup is incomplete, re-processing. automatic repair not implemented, yet. Manual fixing required')
 
     # create vm snapshot via proxmox api
     create_vm_snapshot(vm, snapshot_name)
 
     # backup rbd disk's of vm
-    for disk in vm.rbd_disks:
+    for disk in vm.__rbd_disks:
         # wait for snapshot creation completion
-        tries = 60
+        tries = 500
         tries_attempted = tries
         succeed = False
         while not succeed and tries > 0:
-            log_message(f'wait for snapshot creation completion of {vm} -> {disk}@{snapshot_name}. {tries} tries left oft {tries_attempted}', LOGLEVEL_DEBUG)
+            log.debug(f'wait for snapshot creation completion of {vm} -> {disk}@{snapshot_name}. {tries} tries left oft {tries_attempted}')
             time.sleep(1)
             tries -= 1
             results = ceph.get_rbd_snapshots_by_prefix(disk.pool, disk.name, config['global']['snapshot_name_prefix'], remote_connection_command)
             for snap in results:
                 if 'name' in snap and snap['name'] == snapshot_name:
-                    log_message(f'snapshot of {vm} -> {disk}@{snapshot_name} found', LOGLEVEL_DEBUG)
+                    log.debug(f'snapshot of {vm} -> {disk}@{snapshot_name} found')
                     succeed = True
                     break
         if not succeed:
@@ -309,29 +243,29 @@ for vm in vms:
 
         # perform initial backup
         if existing_backup_snapshot_count == 0:
-            log_message(f'initial backup, starting full copy of {vm} -> {disk}', LOGLEVEL_INFO)
+            log.info(f'initial backup, starting full copy of {vm} -> {disk}')
             image_size = exec_parse_json(f'{remote_connection_command} rbd info {disk} --format json')['size']
             exec_raw(f'/bin/bash -c set -o pipefail; {remote_connection_command} "rbd export --no-progress {disk}@{snapshot_name} -" | pv --rate --bytes --progress --timer --eta --size {image_size} | rbd import --no-progress - {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}')
             ceph.create_rbd_snapshot(backup_rbd_pool, f'{vm.uuid}-{disk.pool}-{disk.name}', new_snapshot_name=snapshot_name)
-            log_message(f'initial backup of {vm} -> {disk} complete', LOGLEVEL_INFO)
+            log.info(f'initial backup of {vm} -> {disk} complete')
             del image_size
 
         if existing_backup_snapshot_count == 1:
-            log_message(f'incremental backup, starting for {vm} -> {disk}', LOGLEVEL_INFO)
+            log.info(f'incremental backup, starting for {vm} -> {disk}')
             whole_object_command = ''
             if 'enable_intra_object_delta_transfer' in config['global'] and not config['global'].getboolean('enable_intra_object_delta_transfer'):
                 whole_object_command = '--whole-object'
             exec_raw(f'/bin/bash -c set -o pipefail; {remote_connection_command} "rbd export-diff --no-progress {whole_object_command} --from-snap {existing_backup_snapshot} {disk}@{snapshot_name} -" | pv --rate --bytes --timer | rbd import-diff --no-progress - {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}')
-            log_message(f'incremental backup of {vm} -> {disk} complete', LOGLEVEL_INFO)
+            log.info(f'incremental backup of {vm} -> {disk} complete')
             del whole_object_command
 
         # check if image and snapshot does exist on backup cluster
-        log_message(f'check if image and snapshot does exist on backup cluster for {vm} -> {vm.uuid}-{disk.pool}-{disk.name}@{snapshot_name}', LOGLEVEL_DEBUG)
+        log.debug(f'check if image and snapshot does exist on backup cluster for {vm} -> {vm.uuid}-{disk.pool}-{disk.name}@{snapshot_name}')
         results = ceph.get_rbd_snapshots_by_prefix(backup_rbd_pool, f'{vm.uuid}-{disk.pool}-{disk.name}', config['global']['snapshot_name_prefix'])
         succeed = False
         for snap in results:
             if 'name' in snap and snap['name'] == snapshot_name:
-                log_message(f'snapshot {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}@{snapshot_name} found', LOGLEVEL_DEBUG)
+                log.debug(f'snapshot {backup_rbd_pool}/{vm.uuid}-{disk.pool}-{disk.name}@{snapshot_name} found')
                 succeed = True
         if not succeed:
             raise RuntimeError('image and snapshot does exist on backup cluster')
@@ -341,7 +275,7 @@ for vm in vms:
     try:
         nodes = proxmox.nodes.get()
     except:
-        log_message('proxmox session expired, try to renew session', LOGLEVEL_INFO)
+        log.info('proxmox session expired, try to renew session')
         proxmox = ProxmoxAPI(servers[0], user=config['global']['user'], password=config['global']['password'], verify_ssl=config['global'].getboolean('verify_ssl'))
         nodes = proxmox.nodes.get()
 
