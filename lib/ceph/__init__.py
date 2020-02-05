@@ -6,7 +6,7 @@ import random
 import subprocess
 
 
-class RbdImage:
+class Image:
     def __init__(self, pool_name: str, image: str):
         self.pool = pool_name
         self.name = image
@@ -90,7 +90,17 @@ class Ceph:
 
     def map_rbd_image(self, pool: str, image: str, command_inject: str = ''):
         helper.Log.message('mapping ceph image ' + pool + '/' + image, helper.LOGLEVEL_DEBUG)
-        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + 'rbd -p ' + pool + ' device map ' + image)
+        helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + 'rbd -p ' + pool + ' device map ' + image)
+        mapped_path = ''
+        mapped_images_info = self.get_rbd_image_mapped_info()
+        for mapped_image in mapped_images_info:
+            if mapped_image['name'] == image:
+                mapped_path = mapped_image['device']
+                break
+        if mapped_path == '':
+            raise RuntimeError(f'could not find mapped block-device of image {image}')
+        del mapped_images_info
+        return mapped_path
 
     def unmap_rbd_image(self, pool: str, image: str, command_inject: str = ''):
         helper.Log.message('unmapping ceph image ' + pool + '/' + image, helper.LOGLEVEL_DEBUG)

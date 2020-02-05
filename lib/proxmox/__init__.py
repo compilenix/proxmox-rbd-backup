@@ -6,7 +6,7 @@ import time
 
 
 class Node(Cacheable):
-    id: int
+    id: str
 
     def __init__(self, node_id):
         super().__init__()
@@ -14,6 +14,9 @@ class Node(Cacheable):
 
     def __str__(self):
         return self.id
+
+    def __eq__(self, other):
+        return self.id == other.id
 
 
 class Storage(Cacheable):
@@ -38,18 +41,24 @@ class Storage(Cacheable):
     def __str__(self):
         return self.name
 
+    def __eq__(self, other):
+        return self.digest == other.digest
+
 
 class Disk(Cacheable):
     name: str
     storage: Storage
 
-    def __init__(self, image: str, storage):
+    def __init__(self, image: str, storage: Storage):
         super().__init__()
-        self.storage: Storage = storage
+        self.storage = storage
         self.name = image
 
     def __str__(self):
         return f'{self.storage}:{self.name}'
+
+    def __eq__(self, other):
+        return self.storage == other.storage and self.name == other.name
 
 
 class VM(Cacheable):
@@ -72,6 +81,9 @@ class VM(Cacheable):
 
     def __str__(self):
         return f'{self.name} (id={self.id}, uuid={self.uuid})'
+
+    def __eq__(self, other):
+        return self.id == other.id and (True if not self.uuid or not other.uuid else self.uuid == other.uuid)
 
     def set_config(self, config: [dict]):
         self.__config = ''
@@ -118,11 +130,11 @@ class VM(Cacheable):
             if re.match(r'^(scsi|sata|ide|virtio|efidisk|unused)\d', line) is None:
                 continue
             for storage in storages:
-                if not line.startswith(f'{storage}'):
+                if f': {storage}:' not in line:
                     continue
-                disk_identifier = line.split(',')[0]
-                image = disk_identifier.replace(storage.name, storage.pool).split(':')[1]
-                disk = Disk(image, storage)
+                disk = line.replace(' ', '').split(':')[2]  # remove spaces, remove config key and split disk storage name from disk name
+                disk = disk.split(',')[0]  # remove optional disk parameters
+                disk = Disk(disk, storage)
                 if disk in disks_to_ignore:
                     log.debug(f'ignore proxmox vm disk: {disk} as requested by config [{self.uuid} (name={self.name}, id={self.id})] -> \"ignore_disks\": {", ".join(disks_to_ignore)}')
                     continue
@@ -135,9 +147,9 @@ class VM(Cacheable):
 
 
 class Proxmox:
-    vms: [VM]
-    storages: [Storage]
-    nodes: [Node]
+    _vms: [VM]
+    _storages: [Storage]
+    _nodes: [Node]
     verify_ssl: bool
     password: str
     user: str
@@ -150,42 +162,42 @@ class Proxmox:
         self.password = password
         self.verify_ssl = verify_ssl
         self.session = ProxmoxAPI(self.servers[0], 'https', user=self.user, password=self.password, verify_ssl=self.verify_ssl)
-        self.nodes = []
-        self.storages = []
-        self.vms = []
+        self._nodes = []
+        self._storages = []
+        self._vms = []
 
     def update_nodes(self):
         tmp_nodes = self.session.nodes.get()
         tmp_nodes = sorted(tmp_nodes, key=lambda x: x['node'])
-        self.nodes = []
+        self._nodes = []
         for node in tmp_nodes:
-            self.nodes.append(Node(node['node']))
+            self._nodes.append(Node(node['node']))
 
     def get_nodes(self):
-        return self.nodes
+        return self._nodes
 
     def update_storages(self, storages_to_ignore=None):
         if storages_to_ignore is None:
             storages_to_ignore = []
         tmp_storages = self.session.storage.get(type='rbd')
         tmp_storages = sorted(tmp_storages, key=lambda x: x['storage'])
-        self.storages = []
+        self._storages = []
         for storage in tmp_storages:
             if storage['storage'] in storages_to_ignore:
                 log.debug(f'ignore proxmox storage {storage["storage"]}')
                 continue
             if 'images' in storage['content']:
-                self.storages.append(Storage(name=storage['storage'], storage_type=storage['type'], shared=storage['shared'], content=storage['content'], pool=storage['pool'], krbd=int(storage['krbd']), digest=storage['digest']))
+                self._storages.append(Storage(name=storage['storage'], storage_type=storage['type'], shared=storage['shared'], content=storage['content'], pool=storage['pool'], krbd=int(storage['krbd']), digest=storage['digest']))
 
     def get_storages(self):
-        return self.storages
+        return self._storages
 
     def update_vms(self, vms_to_ignore=None):
         if vms_to_ignore is None:
             vms_to_ignore = []
-        self.vms = []
+        self._vms = []
         log.info('get vm\'s...')
-        for node in self.nodes:
+        for node in self._nodes:
             log.info(f'get vm\'s from node {node.id}')
             tmp_vms = self.session.nodes(node.id).qemu.get()
             tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
@@ -199,10 +211,10 @@ class Proxmox:
                     log.debug(f'ignore vm as requested ({tmp_vm})')
                     continue
 
-                self.vms.append(tmp_vm)
+                self._vms.append(tmp_vm)
 
     def get_vms(self):
-        return self.vms
+        return self._vms
 
     def create_vm_snapshot(self, vm: VM, name: str):
         log.info(f'create vm snapshot via proxmox api for {vm}')
@@ -230,3 +242,6 @@ class Proxmox:
 
     def delete_vm_snapshot(self, vm: VM, name: str):
         self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
+
+    def get_snapshots(self, vm: VM):
+        return self.session.nodes(vm.node).qemu(vm.id).get('snapshot')

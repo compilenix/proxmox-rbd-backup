@@ -84,7 +84,7 @@ def exec_parse_json(command: str):
 
 def rbd_image_from_proxmox_disk(disk):
     import lib.ceph as ceph
-    return ceph.RbdImage(disk.ceph_pool, disk.name)
+    return ceph.Image(disk.storage.pool, disk.name)
 
 
 def proxmox_disk_from_rbd_image(disk):
