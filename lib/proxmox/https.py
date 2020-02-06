@@ -37,7 +37,9 @@ class ProxmoxHTTPAuth(AuthBase):
         response_data = requests.post(base_url + "/access/ticket",
                                       verify=verify_ssl,
                                       timeout=timeout,
-                                      data={"username": username, "password": password}).json()["data"]
+                                      data={"username": username, "password": password})
+        response_data = response_data.json()
+        response_data = response_data["data"]
         if response_data is None:
             raise AuthenticationError("Couldn't authenticate user: {0} to {1}".format(username, base_url + "/access/ticket"))
 

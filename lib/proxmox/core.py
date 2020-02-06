@@ -3,6 +3,7 @@ __copyright__ = '(c) Oleg Butovich 2013-2017'
 __licence__ = 'MIT'
 
 import posixpath
+from requests.cookies import cookiejar_from_dict
 from .https import Backend, ProxmoxHTTPAuth
 from ..helper import Log as log
 from http import client as httplib
@@ -73,12 +74,17 @@ class ProxmoxResource(ProxmoxResourceBase):
 
         if resp.status_code == 401:
             log.debug(f'Received 401, the current session may have expired. Retry renewing it.')
-            self._store['session'].auth = ProxmoxHTTPAuth(self._store["base_url"],
+            tmp_url = urlparse.urlparse(self._store["base_url"])
+            tmp_url = f'{tmp_url.scheme}://{tmp_url.netloc}/api2/json'
+            self._store['session'].auth = ProxmoxHTTPAuth(tmp_url,
                                                           self._store['session'].auth.username,
                                                           self._store['session'].auth.password,
                                                           self._store['session'].auth.verify_ssl)
+            self._store['session'].cookies = cookiejar_from_dict({"PVEAuthCookie": self._store['session'].auth.pve_auth_cookie})
             log.debug('Retry original request.')
             return self._request(method, data=data, params=params)
+
+        self._store['session'].cookies = cookiejar_from_dict({"PVEAuthCookie": 'sdlfjslkdjfksldfjlksdf'})
 
         if resp.status_code >= 400:
             if hasattr(resp, 'reason'):
