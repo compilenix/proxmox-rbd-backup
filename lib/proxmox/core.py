@@ -84,8 +84,6 @@ class ProxmoxResource(ProxmoxResourceBase):
             log.debug('Retry original request.')
             return self._request(method, data=data, params=params)
 
-        self._store['session'].cookies = cookiejar_from_dict({"PVEAuthCookie": 'sdlfjslkdjfksldfjlksdf'})
-
         if resp.status_code >= 400:
             if hasattr(resp, 'reason'):
                 raise ResourceException("{0} {1}: {2} - {3}".format(
