@@ -13,6 +13,40 @@ import re
 from lib.ceph import Ceph
 import random
 import time
+import argparse
+
+parser = argparse.ArgumentParser(description='Manage and perform backup / restore of ceph rbd enabled proxmox vms')
+subparsers = parser.add_subparsers(dest='action')
+
+# backup
+parser_backup = subparsers.add_parser('backup', help='perform backups & get basic infos about backups')
+subparsers_backup = parser_backup.add_subparsers(dest='action_backup')
+
+# backup list
+parser_backup_list = subparsers_backup.add_parser('list', help='list vms with backups')
+
+# backup run
+parser_backup_run = subparsers_backup.add_parser('run', help='perform backup')
+
+
+# restore-point
+parser_restore_point = subparsers.add_parser('restore-point', help='manage restore points & get details about restore points')
+subparsers_restore_point = parser_restore_point.add_subparsers(dest='action_restore_point')
+
+# restore-point list
+parser_restore_point_list = subparsers_restore_point.add_parser('list', help='list backups of a vm')
+parser_restore_point_list.add_argument('vm-uuid', action="store")
+
+# restore-point delete
+parser_restore_point_delete = subparsers_restore_point.add_parser('delete', help='remove a restore point from a vm and all associated disks')
+parser_restore_point_delete.add_argument('vm-uuid', action="store")
+parser_restore_point_delete.add_argument('restore-point', action="store")
+
+args = parser.parse_args()
+
+print(vars(args))
+
+exit(0)
 
 if not os.path.isfile('config/global.ini'):
     raise FileNotFoundError('config/global.ini')
