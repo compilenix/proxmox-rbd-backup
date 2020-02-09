@@ -4,6 +4,15 @@ import sys
 from datetime import datetime
 
 
+class ArgumentError(Exception):
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @staticmethod
+    def __new__(*cls, **kwargs):
+        pass
+
+
 def is_list_empty(items) -> bool:
     if items is None:
         return True
