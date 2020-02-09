@@ -18,7 +18,7 @@ class Backup:
     _storages_to_ignore: [str]
     _vms_to_ignore: [str]
 
-    def __init__(self, servers, config):
+    def __init__(self, servers: [str], config: configparser.ConfigParser):
         if is_list_empty(servers):
             raise ArgumentError('servers must be a list with at least one non-empty element')
         if config is None:

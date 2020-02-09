@@ -6,10 +6,12 @@
 import configparser
 import os.path
 import argparse
+
 from lib.backup import Backup
 from lib.helper import *
 from lib.helper import Log as log
 from tabulate import tabulate
+from lib.restore_point import RestorePoint
 
 parser = argparse.ArgumentParser(description='Manage and perform backup / restore of ceph rbd enabled proxmox vms')
 subparsers = parser.add_subparsers(dest='action', required=True)
@@ -59,6 +61,7 @@ if args.action == 'backup':
     backup = Backup(servers, config)
     if args.action_backup == 'run':
         backup.init_proxmox()
+        # TODO: add from args: vms, snapshot_name_prefix
         backup.run_backup()
     if args.action_backup == 'list':
         tmp_vms = []
@@ -70,3 +73,15 @@ if args.action == 'backup':
                 'Last updated': vm['last_updated']
             })
         print(tabulate(tmp_vms, headers='keys'))
+if args.action == 'restore-point':
+    restore_point = RestorePoint(servers, config)
+    if args.action_restore_point == 'list':
+        image = getattr(args, 'vm-uuid')
+        tmp_points = []
+        for point in restore_point.list_restore_points(image):
+            tmp_points.append({
+                'Image': point['image'],
+                'Name': point['name'],
+                'Timestamp': point['timestamp']
+            })
+        print(tabulate(tmp_points, headers='keys'))
