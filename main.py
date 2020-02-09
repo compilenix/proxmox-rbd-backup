@@ -16,7 +16,7 @@ import time
 import argparse
 
 parser = argparse.ArgumentParser(description='Manage and perform backup / restore of ceph rbd enabled proxmox vms')
-subparsers = parser.add_subparsers(dest='action')
+subparsers = parser.add_subparsers(dest='action', required=True)
 
 # backup
 parser_backup = subparsers.add_parser('backup', help='perform backups & get basic infos about backups')
@@ -27,20 +27,21 @@ parser_backup_list = subparsers_backup.add_parser('list', help='list vms with ba
 
 # backup run
 parser_backup_run = subparsers_backup.add_parser('run', help='perform backup')
-
+parser_backup_run.add_argument('--vm', action='store', nargs='*', help='perform backup of this vm(s)')
+parser_backup_run.add_argument('--snapshot_name_prefix', action='store', help='override "snapshot_name_prefix" from config')
 
 # restore-point
 parser_restore_point = subparsers.add_parser('restore-point', help='manage restore points & get details about restore points')
-subparsers_restore_point = parser_restore_point.add_subparsers(dest='action_restore_point')
+subparsers_restore_point = parser_restore_point.add_subparsers(dest='action_restore_point', required=True)
 
 # restore-point list
 parser_restore_point_list = subparsers_restore_point.add_parser('list', help='list backups of a vm')
-parser_restore_point_list.add_argument('vm-uuid', action="store")
+parser_restore_point_list.add_argument('vm-uuid', action='store')
 
 # restore-point delete
 parser_restore_point_delete = subparsers_restore_point.add_parser('delete', help='remove a restore point from a vm and all associated disks')
-parser_restore_point_delete.add_argument('vm-uuid', action="store")
-parser_restore_point_delete.add_argument('restore-point', action="store")
+parser_restore_point_delete.add_argument('vm-uuid', action='store')
+parser_restore_point_delete.add_argument('restore-point', action='store', nargs='*')
 
 args = parser.parse_args()
 
