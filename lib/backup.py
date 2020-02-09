@@ -82,6 +82,10 @@ class Backup:
 
         unmount_rbd_metadata_image(rbd_image_vm_metadata_name)
         self._ceph.unmap_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+        self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.id', str(vm.id))
+        self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.uuid', str(vm.uuid))
+        self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.name', str(vm.name))
+        self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.running', str(vm.running))
         self._ceph.create_rbd_snapshot(self._backup_rbd_pool, rbd_image_vm_metadata_name, new_snapshot_name=snapshot_name)
 
     def update_vm_ignore_disks(self, vm):

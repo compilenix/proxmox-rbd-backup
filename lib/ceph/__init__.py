@@ -109,3 +109,15 @@ class Ceph:
     def get_rbd_image_mapped_info(self, command_inject: str = ''):
         helper.Log.message('get info about mapped rbd images' + (' locally' if command_inject == '' else ' on remote: ' + command_inject.split('@')[1]), helper.LOGLEVEL_DEBUG)
         return helper.exec_parse_json(f'{command_inject + " " if command_inject else "" }' + 'rbd device list --format json')
+
+    def list_rbd_image_meta(self, pool: str, image: str, command_inject: str = ''):
+        return helper.exec_parse_json(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta list {pool}/{image} --format json')
+
+    def get_rbd_image_meta(self, pool: str, image: str, key: str, command_inject: str = ''):
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta get {pool}/{image} {key}')
+
+    def set_rbd_image_meta(self, pool: str, image: str, key: str, value: str, command_inject: str = ''):
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta set {pool}/{image} {key} {value}')
+
+    def remove_rbd_image_meta(self, pool: str, image: str, key: str, command_inject: str = ''):
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta remove {pool}/{image} {key}')
