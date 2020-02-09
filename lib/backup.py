@@ -86,6 +86,7 @@ class Backup:
         self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.uuid', str(vm.uuid))
         self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.name', str(vm.name))
         self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.running', str(vm.running))
+        self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'last_updated', str(datetime.utcnow()))
         self._ceph.create_rbd_snapshot(self._backup_rbd_pool, rbd_image_vm_metadata_name, new_snapshot_name=snapshot_name)
 
     def update_vm_ignore_disks(self, vm):
@@ -183,3 +184,14 @@ class Backup:
                 self.backup_vm_disk(vm, disk, snapshot_name, is_backup_mode_incremental, existing_backup_snapshot)
             if is_backup_mode_incremental:
                 self._proxmox.delete_vm_snapshot(vm, existing_backup_snapshot)
+
+    def list_vms(self):
+        tmp_vms = []
+        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
+        for image in images:
+            if not re.match(r'^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}_vm_metadata$', image): # https://www.regextester.com/94410
+                continue
+            image_metas = self._ceph.list_rbd_image_meta(self._backup_rbd_pool, image)
+            tmp_vms.append(image_metas)
+        tmp_vms = sorted(tmp_vms, key=lambda x: x['vm.id'])
+        return tmp_vms

@@ -114,10 +114,10 @@ class Ceph:
         return helper.exec_parse_json(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta list {pool}/{image} --format json')
 
     def get_rbd_image_meta(self, pool: str, image: str, key: str, command_inject: str = ''):
-        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta get {pool}/{image} {key}')
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta get {pool}/{image} "{key}"')
 
     def set_rbd_image_meta(self, pool: str, image: str, key: str, value: str, command_inject: str = ''):
-        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta set {pool}/{image} {key} {value}')
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta set {pool}/{image} "{key}" "{value}"')
 
     def remove_rbd_image_meta(self, pool: str, image: str, key: str, command_inject: str = ''):
-        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta remove {pool}/{image} {key}')
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta remove {pool}/{image} "{key}"')

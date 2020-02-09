@@ -1,4 +1,3 @@
-# TODO: list vm's in backup
 # TODO: list backups of given vm
 # TODO: perform restore of given backup
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
@@ -10,6 +9,7 @@ import argparse
 from lib.backup import Backup
 from lib.helper import *
 from lib.helper import Log as log
+from tabulate import tabulate
 
 parser = argparse.ArgumentParser(description='Manage and perform backup / restore of ceph rbd enabled proxmox vms')
 subparsers = parser.add_subparsers(dest='action', required=True)
@@ -60,3 +60,13 @@ if args.action == 'backup':
     if args.action_backup == 'run':
         backup.init_proxmox()
         backup.run_backup()
+    if args.action_backup == 'list':
+        tmp_vms = []
+        for vm in backup.list_vms():
+            tmp_vms.append({
+                'VMID': vm['vm.id'],
+                'Name': vm['vm.name'],
+                'UUID': vm['vm.uuid'],
+                'Last updated': vm['last_updated']
+            })
+        print(tabulate(tmp_vms, headers='keys'))
