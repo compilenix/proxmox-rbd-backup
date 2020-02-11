@@ -4,6 +4,15 @@ import sys
 from datetime import datetime
 
 
+class ArgumentError(Exception):
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @staticmethod
+    def __new__(*cls, **kwargs):
+        pass
+
+
 def is_list_empty(items) -> bool:
     if items is None:
         return True
@@ -19,6 +28,18 @@ LOGLEVEL_DEBUG = 0
 LOGLEVEL_INFO = 1
 LOGLEVEL_WARN = 2
 LOGLEVEL_ERR = 3
+
+
+def map_loglevel_str(level: int):
+    if level == LOGLEVEL_DEBUG:
+        return 'DEBUG'
+    if level == LOGLEVEL_INFO:
+        return ' INFO'
+    if level == LOGLEVEL_WARN:
+        return ' WARN'
+    if level == LOGLEVEL_ERR:
+        return 'ERROR'
+    return 'UNKNOWN'
 
 
 class Log:
@@ -38,7 +59,7 @@ class Log:
     def message(message: str, level: int) -> None:
         if Log._LOGLEVEL > level:
             return
-        message = f'[{datetime.now()}] {message}'
+        message = f'[{datetime.utcnow()}] {map_loglevel_str(level)}: {message}'
         if level == LOGLEVEL_DEBUG or level == LOGLEVEL_ERR:
             Log.print_std_err(message)
         else:
