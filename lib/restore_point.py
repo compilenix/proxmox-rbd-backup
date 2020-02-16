@@ -44,20 +44,15 @@ class RestorePoint:
         self._proxmox.update_vms(self._vms_to_ignore)
 
     def list_restore_points(self, vm_uuid: str):
-        tmp_images = []
+        image = f'{vm_uuid}_vm_metadata'
         tmp_points = []
-        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
-        for image in images:
-            if vm_uuid in image:
-                tmp_images.append(image)
 
-        for image in tmp_images:
-            snapshots = self._ceph.get_rbd_snapshots(self._backup_rbd_pool, image)
-            for snapshot in snapshots:
-                tmp_points.append({
-                    'image': f'{self._backup_rbd_pool}/{image}',
-                    "name": snapshot['name'],
-                    "timestamp": snapshot['timestamp']
-                })
+        snapshots = self._ceph.get_rbd_snapshots(self._backup_rbd_pool, image)
+        for snapshot in snapshots:
+            tmp_points.append({
+                'image': f'{self._backup_rbd_pool}/{image}',
+                "name": snapshot['name'],
+                "timestamp": snapshot['timestamp']
+            })
         tmp_points = sorted(tmp_points, key=lambda x: datetime.strptime(x['timestamp'], '%a %b %d %H:%M:%S %Y'))
         return tmp_points

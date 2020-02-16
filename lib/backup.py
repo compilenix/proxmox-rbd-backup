@@ -189,7 +189,7 @@ class Backup:
         tmp_vms = []
         images = self._ceph.get_rbd_images(self._backup_rbd_pool)
         for image in images:
-            if not re.match(r'^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}_vm_metadata$', image): # https://www.regextester.com/94410
+            if not re.match(r'^' + REGEX_GUID + '_vm_metadata$', image):
                 continue
             image_metas = self._ceph.list_rbd_image_meta(self._backup_rbd_pool, image)
             tmp_vms.append(image_metas)
