@@ -43,8 +43,6 @@ parser_restore_point_delete.add_argument('restore-point', action='store', nargs=
 
 args = parser.parse_args()
 
-log.debug(f'CLI args: {vars(args)}')
-
 if not os.path.isfile('config/global.ini'):
     raise FileNotFoundError('config/global.ini')
 
@@ -55,7 +53,8 @@ servers = config['global']['proxmox_servers'].replace(' ', '').split(',')
 if is_list_empty(servers):
     raise RuntimeError('no servers found in config')
 
-log.set_loglevel(LOGLEVEL_DEBUG)
+log.set_loglevel(map_loglevel(config['global']['log_level']))
+log.debug(f'CLI args: {vars(args)}')
 
 if args.action == 'backup':
     backup = Backup(servers, config)
@@ -80,7 +79,6 @@ if args.action == 'restore-point':
         tmp_points = []
         for point in restore_point.list_restore_points(image):
             tmp_points.append({
-                'Image': point['image'],
                 'Name': point['name'],
                 'Timestamp': point['timestamp']
             })

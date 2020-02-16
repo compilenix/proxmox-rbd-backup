@@ -1,7 +1,10 @@
 import subprocess
 import json
 import sys
+import re
 from datetime import datetime
+
+REGEX_GUID = r'[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'
 
 
 class ArgumentError(Exception):
@@ -24,6 +27,10 @@ def is_list_empty(items) -> bool:
     return False
 
 
+def is_guid(value: str):
+    return re.match(r'^' + REGEX_GUID + r'$', value)
+
+
 LOGLEVEL_DEBUG = 0
 LOGLEVEL_INFO = 1
 LOGLEVEL_WARN = 2
@@ -39,6 +46,19 @@ def map_loglevel_str(level: int):
         return ' WARN'
     if level == LOGLEVEL_ERR:
         return 'ERROR'
+    return 'UNKNOWN'
+
+
+def map_loglevel(level: str):
+    level = level.upper()
+    if level == 'DEBUG':
+        return LOGLEVEL_DEBUG
+    if level == 'INFO':
+        return LOGLEVEL_INFO
+    if level == 'WARN':
+        return LOGLEVEL_WARN
+    if level == 'ERROR':
+        return LOGLEVEL_ERR
     return 'UNKNOWN'
 
 
