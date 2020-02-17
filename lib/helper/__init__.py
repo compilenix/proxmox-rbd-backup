@@ -2,17 +2,28 @@ import subprocess
 import json
 import sys
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 REGEX_GUID = r'[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'
+_seconds_per_unit = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'M': 2629746, 'y': 31556952}
+
+
+class Time:
+    _time: datetime
+
+    def __init__(self, s):
+        self._time = datetime.strptime(s, '%a %b %d %H:%M:%S %Y')
+
+    def is_older_than(self, age: str):
+        return self._time < datetime.now() - timedelta(seconds=convert_to_seconds(age))
+
+
+def convert_to_seconds(s: str):
+    return int(s[:-1]) * _seconds_per_unit[s[-1]]
 
 
 class ArgumentError(Exception):
     def __init__(self, *args, **kwargs):
-        pass
-
-    @staticmethod
-    def __new__(*cls, **kwargs):
         pass
 
 
