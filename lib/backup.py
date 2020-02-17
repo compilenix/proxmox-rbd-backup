@@ -1,6 +1,5 @@
 import configparser
 import random
-import re
 import time
 from .ceph import Ceph, Image
 from .helper import *

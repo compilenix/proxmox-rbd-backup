@@ -1,6 +1,7 @@
 import configparser
 
 from lib.ceph import Ceph
+from .helper import Log as log
 from lib.helper import is_list_empty, ArgumentError
 from lib.proxmox import Proxmox
 from datetime import datetime
@@ -56,3 +57,16 @@ class RestorePoint:
             })
         tmp_points = sorted(tmp_points, key=lambda x: datetime.strptime(x['timestamp'], '%a %b %d %H:%M:%S %Y'))
         return tmp_points
+
+    def remove_restore_point(self, vm_uuid: str, restore_point: str):
+        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
+        for image in images:
+            if vm_uuid not in image:
+                continue
+            points = self._ceph.get_rbd_snapshots(self._backup_rbd_pool, image)
+            for point in points:
+                if point['name'] == restore_point:
+                    log.info(f'remove {restore_point} from image {self._backup_rbd_pool}/{image}')
+                    self._ceph.remove_rbd_snapshot(self._backup_rbd_pool, image, restore_point)
+                    break
+
