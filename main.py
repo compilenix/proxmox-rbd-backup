@@ -1,4 +1,3 @@
-# TODO: list backups of given vm
 # TODO: perform restore of given backup
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
 # TODO: how to handle proxmox snapshots (especially those including RAM)?
@@ -36,10 +35,10 @@ subparsers_restore_point = parser_restore_point.add_subparsers(dest='action_rest
 parser_restore_point_list = subparsers_restore_point.add_parser('list', help='list backups of a vm')
 parser_restore_point_list.add_argument('vm-uuid', action='store')
 
-# restore-point delete
-parser_restore_point_delete = subparsers_restore_point.add_parser('delete', help='remove a restore point from a vm and all associated disks')
-parser_restore_point_delete.add_argument('vm-uuid', action='store')
-parser_restore_point_delete.add_argument('restore-point', action='store', nargs='*')
+# restore-point remove
+parser_restore_point_remove = subparsers_restore_point.add_parser('remove', help='remove a restore point from a vm and all associated disks')
+parser_restore_point_remove.add_argument('vm-uuid', action='store')
+parser_restore_point_remove.add_argument('restore-point', action='store', nargs='*')
 
 args = parser.parse_args()
 
@@ -75,11 +74,17 @@ if args.action == 'backup':
 if args.action == 'restore-point':
     restore_point = RestorePoint(servers, config)
     if args.action_restore_point == 'list':
-        image = getattr(args, 'vm-uuid')
+        vm_uuid = getattr(args, 'vm-uuid')
         tmp_points = []
-        for point in restore_point.list_restore_points(image):
+        for point in restore_point.list_restore_points(vm_uuid):
             tmp_points.append({
                 'Name': point['name'],
                 'Timestamp': point['timestamp']
             })
         print(tabulate(tmp_points, headers='keys'))
+    if args.action_restore_point == 'remove':
+        vm_uuid = getattr(args, 'vm-uuid')
+        restore_point_names = getattr(args, 'restore-point')
+        for restore_point_name in restore_point_names:
+            log.info(f'remove snapshots named {restore_point_name} from {vm_uuid}')
+            restore_point.remove_restore_point(vm_uuid, restore_point_name)
