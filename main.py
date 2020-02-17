@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # TODO: perform restore of given backup
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
 # TODO: how to handle proxmox snapshots (especially those including RAM)?
