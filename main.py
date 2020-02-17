@@ -37,8 +37,10 @@ parser_restore_point_list.add_argument('vm-uuid', action='store')
 
 # restore-point remove
 parser_restore_point_remove = subparsers_restore_point.add_parser('remove', help='remove a restore point from a vm and all associated disks')
-parser_restore_point_remove.add_argument('vm-uuid', action='store')
-parser_restore_point_remove.add_argument('restore-point', action='store', nargs='*')
+parser_restore_point_remove.add_argument('--vm-uuid', action='store')
+parser_restore_point_remove.add_argument('--restore-point', action='store', nargs='*')
+parser_restore_point_remove.add_argument('--age', action='store', help='timespan, i.e.: 15m, 3h, 7d, 3M, 1y')
+parser_restore_point_remove.add_argument('--match', action='store', help='restore point name matches regex')
 
 args = parser.parse_args()
 
@@ -83,8 +85,13 @@ if args.action == 'restore-point':
             })
         print(tabulate(tmp_points, headers='keys'))
     if args.action_restore_point == 'remove':
-        vm_uuid = getattr(args, 'vm-uuid')
-        restore_point_names = getattr(args, 'restore-point')
-        for restore_point_name in restore_point_names:
-            log.info(f'remove snapshots named {restore_point_name} from {vm_uuid}')
-            restore_point.remove_restore_point(vm_uuid, restore_point_name)
+        vm_uuid = args.vm_uuid
+        restore_point_names = args.restore_point
+        age = args.age
+        match = args.match
+        if restore_point_names and len(restore_point_names) > 0:
+            for restore_point_name in restore_point_names:
+                log.info(f'remove snapshots named {restore_point_name} from {vm_uuid}')
+                restore_point.remove_restore_point(vm_uuid, restore_point_name, age, match)
+        else:
+            restore_point.remove_restore_point(vm_uuid, age=age, match=match)
