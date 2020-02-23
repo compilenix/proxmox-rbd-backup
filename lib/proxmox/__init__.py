@@ -83,6 +83,8 @@ class VM(Cacheable):
         return f'{self.name} (id={self.id}, uuid={self.uuid})'
 
     def __eq__(self, other):
+        if not hasattr(other, 'id'):
+            return False
         return self.id == other.id and (True if not self.uuid or not other.uuid else self.uuid == other.uuid)
 
     def set_config(self, config: [dict]):
@@ -216,14 +218,13 @@ class Proxmox:
     def get_vms(self):
         return self._vms
 
-    def create_vm_snapshot(self, vm: VM, name: str):
+    def create_vm_snapshot(self, vm: VM, name: str, tries: int):
         log.info(f'create vm snapshot via proxmox api for {vm}')
         results = self.session.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
         if 'UPID' not in results:
             raise RuntimeError(f'unexpected result while creating proxmox vm snapshot of {vm} result: {results}')
         del results
 
-        tries = 500
         tries_attempted = tries
         succeed = False
         while not succeed and tries > 0:
@@ -244,4 +245,28 @@ class Proxmox:
         self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
 
     def get_snapshots(self, vm: VM):
-        return self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
+        snapshots = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
+        for snapshot in snapshots:
+            if snapshot['name'] == 'current':
+                # this is the proxmox dummy snapshot representing the current state, not an actual one
+                snapshots.remove(snapshot)
+
+        return snapshots
+
+    def get_snapshot_current(self, vm: VM):
+        snapshots = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
+        current = None
+        # find dummy snapshot representing the current state
+        for snapshot in snapshots:
+            if snapshot['name'] == 'current':
+                current = snapshot
+                break
+        # return if the dummy snapshot could not be found or there is no parent snapshot
+        if not current or not current['parent']:
+            return None
+        # find the actual snapshot
+        for snapshot in snapshots:
+            if snapshot['name'] == current['parent']:
+                current = snapshot
+                break
+        return current

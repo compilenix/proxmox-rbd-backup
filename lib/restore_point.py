@@ -45,7 +45,7 @@ class RestorePoint:
         self._proxmox.update_storages(self._storages_to_ignore)
         self._proxmox.update_vms(self._vms_to_ignore)
 
-    def list_restore_points(self, vm_uuid: str):
+    def get_restore_points(self, vm_uuid: str):
         image = f'{vm_uuid}_vm_metadata'
         tmp_points = []
 
@@ -62,8 +62,8 @@ class RestorePoint:
     def remove_restore_point(self, vm_uuid: str = None, restore_point: str = None, age: str = None, match: str = None):
         if not vm_uuid and not restore_point and not age and not match:
             raise ArgumentError('at least one parameter must be set; vm_uuid, restore_point, age or match')
-        if vm_uuid and not (restore_point or age):
-            raise ArgumentError('if vm_uuid is set, restore_point or age must be set')
+        if vm_uuid and not (restore_point or age or match):
+            raise ArgumentError('if vm_uuid is set, restore_point, age or match must be set')
 
         points_to_remove = []
         images = self._ceph.get_rbd_images(self._backup_rbd_pool)

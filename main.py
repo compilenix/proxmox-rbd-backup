@@ -25,8 +25,10 @@ parser_backup_list = subparsers_backup.add_parser('list', help='list vms with ba
 
 # backup run
 parser_backup_run = subparsers_backup.add_parser('run', help='perform backup')
-parser_backup_run.add_argument('--vm', action='store', nargs='*', help='perform backup of this vm(s)')
+parser_backup_run.add_argument('--vm_uuid', action='store', nargs='*', help='perform backup of this vm(s)')
+parser_backup_run.add_argument('--match', action='store', help='perform backup of vm(s) which match the given regex')
 parser_backup_run.add_argument('--snapshot_name_prefix', action='store', help='override "snapshot_name_prefix" from config')
+parser_backup_run.add_argument('--allow_using_any_existing_snapshot', action='store_true', help='use the latest existing snapshot, instead of one that matches the snapshot_name_prefix. This implies that the existing found snapshot will not be removed after backup completion, if it does not match snapshot_name_prefix')
 
 # restore-point
 parser_restore_point = subparsers.add_parser('restore-point', help='manage restore points & get details about restore points')
@@ -62,11 +64,36 @@ if args.action == 'backup':
     backup = Backup(servers, config)
     if args.action_backup == 'run':
         backup.init_proxmox()
-        # TODO: add from args: vms, snapshot_name_prefix
-        backup.run_backup()
+        vms_uuid = args.vm_uuid
+        vm_name_match = args.match
+        snapshot_name_prefix = args.snapshot_name_prefix
+        allow_using_any_existing_snapshot = args.allow_using_any_existing_snapshot
+
+        if snapshot_name_prefix:
+            backup.set_snapshot_name_prefix(snapshot_name_prefix)
+        else:
+            backup.set_snapshot_name_prefix(config['global']['snapshot_name_prefix'])
+
+        if not vms_uuid and not vm_name_match:
+            backup.run_backup(allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
+            exit(0)
+
+        existing_vms = backup.get_vms_proxmox()
+        tmp_vms = []
+
+        if vms_uuid and len(vms_uuid) > 0:
+            for i, vm_uuid in enumerate(vms_uuid):
+                if vm_uuid in map(lambda x: x.uuid, existing_vms):
+                    tmp_vms.append(existing_vms[i])
+
+        if vm_name_match:
+            for i, vm_name in enumerate(map(lambda x: x.name, existing_vms)):
+                if re.match(vm_name_match, vm_name):
+                    tmp_vms.append(existing_vms[i])
+        backup.run_backup(tmp_vms, allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
     if args.action_backup == 'list':
         tmp_vms = []
-        for vm in backup.list_vms():
+        for vm in backup.get_vms():
             tmp_vms.append({
                 'VMID': vm['vm.id'],
                 'Name': vm['vm.name'],
@@ -79,7 +106,7 @@ if args.action == 'restore-point':
     if args.action_restore_point == 'list':
         vm_uuid = getattr(args, 'vm-uuid')
         tmp_points = []
-        for point in restore_point.list_restore_points(vm_uuid):
+        for point in restore_point.get_restore_points(vm_uuid):
             tmp_points.append({
                 'Name': point['name'],
                 'Timestamp': point['timestamp']
