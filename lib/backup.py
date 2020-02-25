@@ -171,10 +171,7 @@ class Backup:
 
         if is_backup_mode_incremental:
             log.info(f'incremental backup, starting for {vm} -> {image}')
-            whole_object_command = ''
-            if 'enable_intra_object_delta_transfer' in self._config['global'] and not self._config['global'].getboolean('enable_intra_object_delta_transfer'):
-                whole_object_command = '--whole-object'
-            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export-diff --no-progress {whole_object_command} --from-snap {existing_backup_snapshot} {image}@{snapshot_name} -" | pv --rate --bytes --timer | rbd import-diff --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
+            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export-diff --no-progress --from-snap {existing_backup_snapshot} {image}@{snapshot_name} -" | pv --rate --bytes --timer | rbd import-diff --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
             log.info(f'incremental backup of {vm} -> {image} complete')
         else:
             log.info(f'initial backup, starting full copy of {vm} -> {image}')

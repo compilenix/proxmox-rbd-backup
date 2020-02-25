@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-# TODO: perform restore of given backup
+# TODO: check if qemu-guest-agent is installed
+# TODO: add support for fsfreeze-freeze and fsfreeze-thaw
+# TODO: ignore disks which are marked as "no backup" on proxmox
 # TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
-# TODO: how to handle proxmox snapshots (especially those including RAM)?
+# TODO: handle proxmox snapshots with RAM
+# TODO: remove snapshots from unused disks?
 
 import configparser
 import os.path
