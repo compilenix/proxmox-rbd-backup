@@ -42,6 +42,14 @@ def is_guid(value: str):
     return re.match(r'^' + REGEX_GUID + r'$', value)
 
 
+def unique_list(list: []):
+    tmp_list = []
+    for x in list:
+        if x not in tmp_list:
+            tmp_list.append(x)
+    return tmp_list
+
+
 LOGLEVEL_DEBUG = 0
 LOGLEVEL_INFO = 1
 LOGLEVEL_WARN = 2

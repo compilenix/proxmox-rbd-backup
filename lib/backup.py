@@ -55,6 +55,23 @@ class Backup:
     def get_snapshot_name_prefix(self):
         return self._snapshot_name_prefix
 
+    def get_vm_snapshots(self, vm: VM):
+        """
+        :return: [
+            {
+                name: snapshot_name
+                parent: snapshot_name
+            }
+        ]
+        """
+        return self._proxmox.get_snapshots(vm)
+
+    def remove_vm_snapshot(self, vm: VM, snapshot_name: str):
+        try:
+            self._proxmox.remove_vm_snapshot(vm, snapshot_name)
+        except Exception as error:
+            log.error(f'{error}')
+
     def update_metadata(self, vm: VM, snapshot_name: str):
         rbd_image_vm_metadata_name = vm.uuid + '_vm_metadata'
         log.info(f'save current config into vm metadata image of vm {vm.uuid} (id={vm.id}, name={vm.name})')
@@ -204,10 +221,11 @@ class Backup:
                 is_backup_mode_incremental = True
 
             self._proxmox.create_vm_snapshot(vm, snapshot_name, self._wait_for_snapshot_tries)
+
             for disk in vm.get_rbd_disks():
                 self.backup_vm_disk(vm, disk, snapshot_name, is_backup_mode_incremental, existing_backup_snapshot)
             if is_backup_mode_incremental and existing_snapshot_matches_prefix:
-                self._proxmox.delete_vm_snapshot(vm, existing_backup_snapshot)
+                self._proxmox.remove_vm_snapshot(vm, existing_backup_snapshot)
 
     def get_vms(self):
         """
@@ -235,3 +253,10 @@ class Backup:
         if not from_cache:
             self._proxmox.update_vms(self._vms_to_ignore)
         return self._proxmox.get_vms()
+
+    def get_vm(self, uuid: str, from_cache=True) -> VM or None:
+        vms = self.get_vms_proxmox(from_cache)
+        for vm in vms:
+            if vm.uuid == uuid:
+                return vm
+        return None

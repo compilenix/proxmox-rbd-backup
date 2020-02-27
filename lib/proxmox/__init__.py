@@ -69,6 +69,7 @@ class VM(Cacheable):
     name: str
     uuid: str
     id: int
+    _guest_agent_info: object
 
     def __init__(self, vm_id=0, uuid='', name='', node=None, rbd_disks=None, status=''):
         super().__init__()
@@ -78,6 +79,7 @@ class VM(Cacheable):
         self.node = node
         self.__rbd_disks = rbd_disks if rbd_disks is not None else []
         self.running = True if status == 'running' else False
+        self._guest_agent_info = None
 
     def __str__(self):
         return f'{self.name} (id={self.id}, uuid={self.uuid})'
@@ -146,6 +148,12 @@ class VM(Cacheable):
 
     def get_rbd_disks(self):
         return self.__rbd_disks
+
+    def set_guest_agent_info(self, agent_info: object):
+        self._guest_agent_info = agent_info
+
+    def get_guest_agent_info(self):
+        return self._guest_agent_info
 
 
 class Proxmox:
@@ -241,7 +249,7 @@ class Proxmox:
             raise RuntimeError(f'proxmox vm snapshot creation of {vm} tined out after {tries_attempted} tries')
         log.debug(f'snapshot creation for {vm} was successful')
 
-    def delete_vm_snapshot(self, vm: VM, name: str):
+    def remove_vm_snapshot(self, vm: VM, name: str):
         self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
 
     def get_snapshots(self, vm: VM):
@@ -270,3 +278,51 @@ class Proxmox:
                 current = snapshot
                 break
         return current
+
+    def update_agent_info(self, vm: VM):
+        agent_info = self.session.nodes(vm.node).qemu(vm.id).agent('info').get()
+        agent_info = agent_info['result'] if agent_info and agent_info['result'] else None
+        vm.set_guest_agent_info(agent_info)
+        return agent_info
+
+    def get_or_update_guest_agent_info(self, vm: VM):
+        agent_info = vm.get_guest_agent_info()
+        return agent_info if agent_info else self.update_agent_info(vm)
+
+    def is_guest_agent_running(self, vm: VM):
+        agent_info = self.get_or_update_guest_agent_info(vm)
+        return agent_info and agent_info['version'] and agent_info['supported_commands'] and len(agent_info['supported_commands']) > 0
+
+    def is_guest_agent_command_supported(self, vm: VM, command_name: str):
+        agent_info = self.get_or_update_guest_agent_info(vm)
+        if not self.is_guest_agent_running(vm):
+            return False
+        for command in agent_info['supported_commands']:
+            if command['name'] == command_name and command['enabled']:
+                return True
+        return False
+
+    def invoke_guest_agent_exec(self, vm: VM, command_name: str):
+        if not self.is_guest_agent_command_supported(vm, 'guest-exec'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post(command=command_name)
+
+    def invoke_guest_agent_fstrim(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fstrim'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fstrim')
+
+    def invoke_guest_agent_fs_freeze(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fsfreeze-freeze'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fsfreeze-freeze')
+
+    def invoke_guest_agent_fs_status(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fsfreeze-status'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fsfreeze-status')
+
+    def invoke_guest_agent_fs_unfreeze(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fsfreeze-thaw'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fsfreeze-thaw')

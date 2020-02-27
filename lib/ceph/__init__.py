@@ -121,3 +121,6 @@ class Ceph:
 
     def remove_rbd_image_meta(self, pool: str, image: str, key: str, command_inject: str = ''):
         return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta remove {pool}/{image} "{key}"')
+
+    def remove_rbd_image(self, pool: str, image: str, command_inject: str = ''):
+        return helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd rm {pool}/{image}')
