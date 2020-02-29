@@ -128,20 +128,27 @@ if args.action == 'backup':
         vm_backups = backup.get_vms()
         tmp_vms = []  # type: [VM]
         if vms_uuid and len(vms_uuid) > 0:
-            for i, vm_uuid in enumerate(vms_uuid):
-                if vm_uuid in map(lambda x: x['vm.uuid'], vm_backups):
-                    for vm in vms_proxmox:
-                        if vm.uuid == vm_backups[i]['vm.uuid']:
-                            tmp_vms.append(vm)
-                            break
+            done = False
+            for vm_uuid in vms_uuid:
+                for vm in vms_proxmox:
+                    if vm.uuid == vm_uuid:
+                        tmp_vms.append(vm)
+                        done = True
+                        break
+                if done:
+                    break
 
         if vm_name_match:
-            for i, vm_name in enumerate(map(lambda x: x['vm.name'], vm_backups)):
+            done = False
+            for vm_name in map(lambda x: x['vm.name'], vm_backups):
                 if re.match(vm_name_match, vm_name):
                     for vm in vms_proxmox:
-                        if vm.uuid == vm_backups[i]['vm.uuid']:
+                        if vm.name == vm_name:
                             tmp_vms.append(vm)
+                            done = True
                             break
+                if done:
+                    break
 
         if len(tmp_vms) == 0:
             exit(0)
