@@ -200,12 +200,12 @@ class Backup:
 
         if is_backup_mode_incremental:
             log.info(f'incremental backup, starting for {vm} -> {image}')
-            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export-diff --no-progress --from-snap {existing_backup_snapshot} {image}@{snapshot_name} -" | pv --rate --bytes --timer | rbd import-diff --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
+            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export-diff --no-progress --from-snap {existing_backup_snapshot} {image}@{snapshot_name} - | lz4 -z --fast=12 --sparse" | lz4 -d | pv --rate --bytes --timer | rbd import-diff --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
             log.info(f'incremental backup of {vm} -> {image} complete')
         else:
             log.info(f'initial backup, starting full copy of {vm} -> {image}')
             image_size = exec_parse_json(f'{self._remote_connection_command} rbd info {image} --format json')['size']
-            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export --no-progress {image}@{snapshot_name} -" | pv --rate --bytes --progress --timer --eta --size {image_size} | rbd import --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
+            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export --no-progress {image}@{snapshot_name} - | lz4 -z --fast=12 --sparse" | lz4 -d | pv --rate --bytes --progress --timer --eta --size {image_size} | rbd import --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
             self._ceph.create_rbd_snapshot(self._backup_rbd_pool, f'{vm.uuid}-{image.pool}-{image.name}', new_snapshot_name=snapshot_name)
             log.info(f'initial backup of {vm} -> {image} complete')
 
