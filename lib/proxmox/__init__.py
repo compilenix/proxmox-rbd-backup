@@ -250,7 +250,8 @@ class Proxmox:
         log.debug(f'snapshot creation for {vm} was successful')
 
     def remove_vm_snapshot(self, vm: VM, name: str):
-        self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
+        if self.is_snapshot_existing(vm, name):
+            self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
 
     def get_snapshots(self, vm: VM):
         snapshots = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
@@ -260,6 +261,13 @@ class Proxmox:
                 snapshots.remove(snapshot)
 
         return snapshots
+
+    def is_snapshot_existing(self, vm: VM, snapshot_name: str):
+        snaps = self.get_snapshots(vm)
+        for snap in snaps:
+            if snap['name'] == snapshot_name:
+                return True
+        return False
 
     def get_snapshot_current(self, vm: VM):
         snapshots = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
