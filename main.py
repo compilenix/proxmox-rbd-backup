@@ -32,7 +32,7 @@ parser_backup_run = subparsers_backup.add_parser('run', help='perform backup')
 parser_backup_run.add_argument('--vm_uuid', action='store', nargs='*', help='perform backup of this vm(s)')
 parser_backup_run.add_argument('--match', action='store', help='perform backup of vm(s) which match the given regex')
 parser_backup_run.add_argument('--snapshot_name_prefix', action='store', help='override "snapshot_name_prefix" from config')
-parser_backup_run.add_argument('--allow_using_any_existing_snapshot', action='store_true', help='use the latest existing snapshot, instead of one that matches the snapshot_name_prefix. This implies that the existing found snapshot will not be removed after backup completion, if it does not match snapshot_name_prefix')
+parser_backup_run.add_argument('--allow_using_any_existing_snapshot', action='store_true', help='use the latest existing snapshot, instead of one that matches the snapshot_name_prefix. This implies that the existing found snapshot will not be removed after backup completion, if it does not match snapshot_name_prefix.This option is mostly used for adding a new backup interval to an existing backup (only the first backup of that interval needs this option) or for manual / temporary / development backups.')
 
 # backup remove
 parser_backup_remove = subparsers_backup.add_parser('remove', aliases=['rm'], help='remove a backup')
