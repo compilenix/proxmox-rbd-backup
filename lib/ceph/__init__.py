@@ -28,6 +28,22 @@ class Ceph:
     def get_rbd_snapshots(self, pool: str, image: str, command_inject: str = ''):
         return helper.exec_parse_json(f'{command_inject + " " if command_inject else "" }rbd -p {pool} snap ls --format json {image}')
 
+    def get_rbd_snapshot(self, pool: str, image: str, name: str, command_inject: str = ''):
+        """
+        :return: {
+            "id": 1234,
+            "name": "snapshot_name",
+            "size": 1234,  # bytes
+            "protected": True or False,
+            "timestamp": "Sat Feb 29 00:50:17 2020"
+        }
+        """
+        snaps = self.get_rbd_snapshots(pool, image, command_inject=command_inject)
+        for snap in snaps:
+            if snap['name'] == name:
+                return snap
+        return None
+
     def get_rbd_snapshots_by_prefix(self, pool: str, image: str, snapshot_prefix: str, command_inject: str = ''):
         helper.Log.message('get ceph snapshot count for image ' + image, helper.LOGLEVEL_DEBUG)
         snapshots = []

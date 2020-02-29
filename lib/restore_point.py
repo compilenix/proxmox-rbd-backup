@@ -68,7 +68,43 @@ class RestorePoint:
         tmp_points = sorted(tmp_points, key=lambda x: datetime.strptime(x['timestamp'], '%a %b %d %H:%M:%S %Y'))
         return tmp_points
 
-    def remove_restore_point(self, vm_uuid: str = None, restore_point: str = None, age: str = None, match: str = None, backup = None):
+    def get_restore_point_detail(self, vm_uuid: str, restore_point: str, backup=None):
+        """
+        :return: {
+            'has_proxmox_snapshot': False or True
+            'timestamp': '%a %b %d %H:%M:%S %Y',
+            'images': [
+                {
+                    'image': 'rbd/image_name',
+                    'name': 'snapshot_name'
+                }
+            ]
+        }
+        """
+        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
+        tmp_images = []
+        result = {
+            'has_proxmox_snapshot': False,
+            'images': tmp_images,
+            'timestamp': self._ceph.get_rbd_snapshot(self._backup_rbd_pool, f'{vm_uuid}_vm_metadata', restore_point)['timestamp']
+        }
+
+        for image in images:
+            if vm_uuid and vm_uuid not in image:
+                continue
+            points = self._ceph.get_rbd_snapshots(self._backup_rbd_pool, image)
+            for point in points:
+                if restore_point != point['name']:
+                    continue
+                tmp_images.append({
+                    'image': f'{self._backup_rbd_pool}/{image}',
+                    "name": point['name']
+                })
+        if backup:
+            result['has_proxmox_snapshot'] = backup.is_vm_snapshot_existing(backup.get_vm(vm_uuid), restore_point)
+        return result
+
+    def remove_restore_point(self, vm_uuid: str = None, restore_point: str = None, age: str = None, match: str = None, backup=None):
         if not vm_uuid and not restore_point and not age and not match:
             raise ArgumentError('at least one parameter must be set; vm_uuid, restore_point, age or match')
         if vm_uuid and not (restore_point or age or match):

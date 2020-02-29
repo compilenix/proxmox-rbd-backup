@@ -48,6 +48,11 @@ subparsers_restore_point = parser_restore_point.add_subparsers(dest='action_rest
 parser_restore_point_list = subparsers_restore_point.add_parser('list', aliases=['ls'], help='list backups of a vm')
 parser_restore_point_list.add_argument('vm-uuid', action='store')
 
+# restore-point info
+parser_restore_point_info = subparsers_restore_point.add_parser('info', help='get details of a restore point')
+parser_restore_point_info.add_argument('vm-uuid', action='store')
+parser_restore_point_info.add_argument('restore-point', action='store')
+
 # restore-point remove
 parser_restore_point_remove = subparsers_restore_point.add_parser('remove', aliases=['rm'], help='remove a restore point from a vm and all associated disks')
 parser_restore_point_remove.add_argument('--vm-uuid', action='store')
@@ -173,6 +178,27 @@ if args.action == 'restore-point':
                 'Name': point['name'],
                 'Timestamp': point['timestamp']
             })
+        print(tabulate(tmp_points, headers='keys'))
+    if args.action_restore_point == 'info':
+        arg_uuid = getattr(args, 'vm-uuid')
+        arg_restore_point = getattr(args, 'restore-point')
+        backup = Backup(servers, config)
+        backup.init_proxmox()
+
+        point_details = restore_point.get_restore_point_detail(arg_uuid, arg_restore_point, backup=backup)
+        print(f'Summary:\n'
+              f'  VM: {backup.get_vm(arg_uuid)}\n'
+              f'  Restore point name: {arg_restore_point}\n'
+              f'  Timestamp: {point_details["timestamp"]}\n'
+              f'  Has Proxmox Snapshot: {point_details["has_proxmox_snapshot"]}\n'
+              f'  RBD images: {len(point_details["images"])}\n')
+        tmp_points = []
+        for point in point_details['images']:
+            tmp_points.append({
+                'Name': point['name'],
+                'Image': point['image']
+            })
+        print('Images:')
         print(tabulate(tmp_points, headers='keys'))
     if re.match(r'^(remove|rm)$', args.action_restore_point):
         vm_uuid = args.vm_uuid
