@@ -69,6 +69,15 @@ class Backup:
     def remove_vm_snapshot(self, vm: VM, snapshot_name: str):
         try:
             self._proxmox.remove_vm_snapshot(vm, snapshot_name)
+            tries = self._wait_for_snapshot_tries
+            tries_attempted = tries
+            while tries > 0:
+                log.debug(f'wait for snapshot removal completion of {vm} -> {snapshot_name}. {tries} tries left oft {tries_attempted}')
+                time.sleep(1)
+                tries -= 1
+                if not self._proxmox.is_snapshot_existing(vm, snapshot_name):
+                    log.debug('snapshot removal complete')
+                    break
         except Exception as error:
             log.error(f'{error}')
 
