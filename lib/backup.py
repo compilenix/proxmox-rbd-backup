@@ -182,6 +182,9 @@ class Backup:
             raise RuntimeError('image and snapshot does exist on backup cluster')
         return succeed
 
+    def is_vm_snapshot_existing(self, vm: VM, snapshot_name: str):
+        return self._proxmox.is_snapshot_existing(vm, snapshot_name)
+
     def backup_vm_disk(self, vm: VM,  disk: Disk, snapshot_name: str, is_backup_mode_incremental: bool, existing_backup_snapshot: str = None):
         image = rbd_image_from_proxmox_disk(disk)
         self.wait_for_rbd_image_snapshot_completion(vm, image, snapshot_name, self.get_snapshot_name_prefix())
