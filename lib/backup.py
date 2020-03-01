@@ -73,7 +73,7 @@ class Backup:
             tries = self._wait_for_snapshot_tries
             tries_attempted = tries
             while tries > 0:
-                log.debug(f'wait for snapshot removal completion of {vm} -> {snapshot_name}. {tries} tries left oft {tries_attempted}')
+                log.debug(f'wait for snapshot removal completion of {vm} -> {snapshot_name}. {tries} tries left of {tries_attempted}')
                 time.sleep(1)
                 tries -= 1
                 if not self._proxmox.is_snapshot_existing(vm, snapshot_name):
@@ -169,7 +169,7 @@ class Backup:
         tries_attempted = tries
         succeed = False
         while not succeed and tries > 0:
-            log.debug(f'wait for snapshot creation completion of {vm} -> {image}@{snapshot_name}. {tries} tries left oft {tries_attempted}')
+            log.debug(f'wait for snapshot creation completion of {vm} -> {image}@{snapshot_name}. {tries} tries left of {tries_attempted}')
             time.sleep(1)
             tries -= 1
             results = self._ceph.get_rbd_snapshots_by_prefix(image.pool, image.name, snapshot_name_prefix, self._remote_connection_command)
