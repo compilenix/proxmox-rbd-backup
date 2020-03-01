@@ -9,6 +9,7 @@
 import configparser
 import os.path
 import argparse
+import argcomplete
 
 from lib.backup import Backup
 from lib.helper import *
@@ -60,6 +61,7 @@ parser_restore_point_remove.add_argument('--restore-point', action='store', narg
 parser_restore_point_remove.add_argument('--age', action='store', help='timespan, i.e.: 15m, 3h, 7d, 3M, 1y')
 parser_restore_point_remove.add_argument('--match', action='store', help='restore point name matches regex')
 
+argcomplete.autocomplete(parser)
 args = parser.parse_args()
 
 if not os.path.isfile('config/global.ini'):

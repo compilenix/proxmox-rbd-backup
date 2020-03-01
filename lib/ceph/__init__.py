@@ -26,6 +26,15 @@ class Ceph:
         return image in self.get_rbd_images(pool, command_inject)
 
     def get_rbd_snapshots(self, pool: str, image: str, command_inject: str = ''):
+        """
+        :return: [{
+            "id": 1234,
+            "name": "snapshot_name",
+            "size": 1234,  # bytes
+            "protected": True or False,
+            "timestamp": "Sat Feb 29 00:50:17 2020"
+        }]
+        """
         return helper.exec_parse_json(f'{command_inject + " " if command_inject else "" }rbd -p {pool} snap ls --format json {image}')
 
     def get_rbd_snapshot(self, pool: str, image: str, name: str, command_inject: str = ''):
@@ -47,7 +56,7 @@ class Ceph:
     def get_rbd_snapshots_by_prefix(self, pool: str, image: str, snapshot_prefix: str, command_inject: str = ''):
         helper.Log.message('get ceph snapshot count for image ' + image, helper.LOGLEVEL_DEBUG)
         snapshots = []
-        for current_snapshot in self.get_rbd_snapshots(pool, image, command_inject):
+        for current_snapshot in self.get_rbd_snapshots(pool, image, command_inject=command_inject):
             if current_snapshot['name'].startswith(snapshot_prefix, 0, len(snapshot_prefix)):
                 snapshots.append(current_snapshot)
         return snapshots
@@ -70,10 +79,7 @@ class Ceph:
 
     def create_rbd_image(self, pool: str, image: str, size: str = '1', command_inject: str = ''):
         """
-        :param pool:
-        :param image:
         :param size: size-in-M/G/T. Examples: 1, 100M, 20G, 4T
-        :param command_inject:
         """
         helper.Log.message('creating ceph rbd image ' + command_inject + pool + '/' + image, helper.LOGLEVEL_INFO)
         helper.exec_raw(f'{command_inject + " " if command_inject else "" }' + 'rbd create ' + pool + '/' + image + ' -s ' + size)

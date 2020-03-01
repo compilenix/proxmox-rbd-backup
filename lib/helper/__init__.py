@@ -130,7 +130,7 @@ def sizeof_fmt(num: float, suffix: str = 'B') -> str:
 
 
 def exec_raw(command: str) -> str:
-    Log.debug(f'exec command "{command}"')
+    Log.debug(f'exec command \'{command}\'')
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     process.wait()
     if process.returncode != 0:
