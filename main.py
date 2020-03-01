@@ -146,16 +146,11 @@ if args.action == 'backup':
                     break
 
         if vm_name_match:
-            done = False
             for vm_name in map(lambda x: x['vm.name'], vm_backups):
                 if re.match(vm_name_match, vm_name):
                     for vm in vms_proxmox:
                         if vm.name == vm_name:
                             tmp_vms.append(vm)
-                            done = True
-                            break
-                if done:
-                    break
 
         if len(tmp_vms) == 0:
             exit(0)
