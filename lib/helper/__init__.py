@@ -98,7 +98,7 @@ class Log:
     def message(message: str, level: int) -> None:
         if Log._LOGLEVEL > level:
             return
-        message = f'[{datetime.utcnow()}] {map_loglevel_str(level)}: {message}'
+        message = f'[{datetime.now()}] {map_loglevel_str(level)}: {message}'
         if level == LOGLEVEL_DEBUG or level == LOGLEVEL_ERR:
             Log.print_std_err(message)
         else:
