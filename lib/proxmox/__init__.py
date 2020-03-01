@@ -63,8 +63,8 @@ class Disk(Cacheable):
 
 class VM(Cacheable):
     status: bool
-    __rbd_disks: [Disk]
-    __config: str
+    _rbd_disks: [Disk]
+    _config: str
     node: Node
     name: str
     uuid: str
@@ -77,9 +77,11 @@ class VM(Cacheable):
         self.uuid = uuid
         self.name = name
         self.node = node
-        self.__rbd_disks = rbd_disks if rbd_disks is not None else []
+        self._rbd_disks = rbd_disks if rbd_disks is not None else []
         self.running = True if status == 'running' else False
         self._guest_agent_info = None
+        self._config = ''
+        self.status = False
 
     def __str__(self):
         return f'{self.name} (id={self.id}, uuid={self.uuid})'
@@ -90,7 +92,7 @@ class VM(Cacheable):
         return self.id == other.id and (True if not self.uuid or not other.uuid else self.uuid == other.uuid)
 
     def set_config(self, config: [dict]):
-        self.__config = ''
+        self._config = ''
         cfg = sorted(config, key=lambda x: x['key'])
         description = ''
         for item in cfg:
@@ -113,11 +115,11 @@ class VM(Cacheable):
                 for description_line in item["value"].split('\n'):
                     description += f'#{description_line}\n'
             else:
-                self.__config += f'{item["key"]}: {item["value"]}\n'
-        self.__config = f'{description}{self.__config}'
+                self._config += f'{item["key"]}: {item["value"]}\n'
+        self._config = f'{description}{self._config}'
 
     def get_config(self):
-        return self.__config
+        return self._config
 
     def update_rbd_disks(self, storages: [Storage], disks_to_ignore=None, config: str = None):
         """vm.uuid has to be defined"""
@@ -125,11 +127,11 @@ class VM(Cacheable):
             raise RuntimeError('self.uuid is empty, this is required to filter excluded disks for this vm (specified in config)')
         if disks_to_ignore is None:
             disks_to_ignore = []
-        if not self.__config and not config:
+        if not self._config and not config:
             raise RuntimeError('config is None')
 
         disks = []
-        config = config if config else self.__config
+        config = config if config else self._config
         for line in config.split('\n'):
             if re.match(r'^(scsi|sata|ide|virtio|efidisk)\d', line) is None:  # TODO: add "unused". Proxmox does not create snapshots for this kind of disks.
                 continue
@@ -144,10 +146,10 @@ class VM(Cacheable):
                     continue
                 log.debug(f'found proxmox vm disk: {disk}')
                 disks.append(disk)
-        self.__rbd_disks = disks
+        self._rbd_disks = disks
 
     def get_rbd_disks(self):
-        return self.__rbd_disks
+        return self._rbd_disks
 
     def set_guest_agent_info(self, agent_info: object):
         self._guest_agent_info = agent_info
@@ -214,7 +216,6 @@ class Proxmox:
             for vm in tmp_vms:
                 tmp_vm = VM(vm['vmid'], name=vm['name'], node=node, status=vm['status'])
                 log.debug(f'found vm {tmp_vm.id} with name {tmp_vm.name}')
-                tmp_vm.set_config(self.session.nodes(node.id).qemu(tmp_vm.id).get('pending'))
 
                 # check if this vm should be excluded according to config
                 if tmp_vm.uuid in vms_to_ignore:
@@ -223,10 +224,15 @@ class Proxmox:
 
                 self._vms.append(tmp_vm)
 
+    def init_vm_config(self, vm: VM, from_cache: bool = True):
+        if not vm.get_config() or not from_cache:
+            vm.set_config(self.session.nodes(vm.node.id).qemu(vm.id).get('pending'))
+
     def get_vms(self):
         return self._vms
 
     def create_vm_snapshot(self, vm: VM, name: str, tries: int):
+        self.init_vm_config(vm)
         log.info(f'create vm snapshot via proxmox api for {vm}')
         results = self.session.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
         if 'UPID' not in results:

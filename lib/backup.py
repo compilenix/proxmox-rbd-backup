@@ -68,6 +68,7 @@ class Backup:
 
     def remove_vm_snapshot(self, vm: VM, snapshot_name: str):
         try:
+            self._proxmox.init_vm_config(vm)
             self._proxmox.remove_vm_snapshot(vm, snapshot_name)
             tries = self._wait_for_snapshot_tries
             tries_attempted = tries
@@ -82,6 +83,7 @@ class Backup:
             log.error(f'{error}')
 
     def update_metadata(self, vm: VM, snapshot_name: str):
+        self._proxmox.init_vm_config(vm)
         rbd_image_vm_metadata_name = vm.uuid + '_vm_metadata'
         log.info(f'save current config into vm metadata image of vm {vm.uuid} (id={vm.id}, name={vm.name})')
         is_vm_metadata_existing = self._ceph.is_rbd_image_existing(self._backup_rbd_pool, rbd_image_vm_metadata_name)
@@ -125,6 +127,7 @@ class Backup:
         self._ceph.create_rbd_snapshot(self._backup_rbd_pool, rbd_image_vm_metadata_name, new_snapshot_name=snapshot_name)
 
     def update_vm_ignore_disks(self, vm: VM):
+        self._proxmox.init_vm_config(vm)
         disks_to_ignore = []
         for section in self._config:
             if section == vm.uuid and 'ignore_disks' in self._config[section] and self._config[section]['ignore_disks']:
@@ -160,6 +163,7 @@ class Backup:
         return result_snapshot_count, result_snapshot_name, existing_snapshot_matches_prefix
 
     def wait_for_rbd_image_snapshot_completion(self, vm: VM, image: Image, snapshot_name: str, snapshot_name_prefix: str = None):
+        self._proxmox.init_vm_config(vm)
         snapshot_name_prefix = snapshot_name_prefix if snapshot_name_prefix else self.get_snapshot_name_prefix()
         tries = self._wait_for_snapshot_tries
         tries_attempted = tries
@@ -179,6 +183,7 @@ class Backup:
         return succeed
 
     def is_image_snapshot_existing(self, vm: VM, image: Image, snapshot_name: str, snapshot_name_prefix: str = None):
+        self._proxmox.init_vm_config(vm)
         snapshot_name_prefix = snapshot_name_prefix if snapshot_name_prefix else self.get_snapshot_name_prefix()
         log.debug(f'check if image and snapshot does exist on backup cluster for {vm} -> {vm.uuid}-{image.pool}-{image.name}@{snapshot_name}')
         results = self._ceph.get_rbd_snapshots_by_prefix(self._backup_rbd_pool, f'{vm.uuid}-{image.pool}-{image.name}', snapshot_name_prefix)
@@ -195,6 +200,7 @@ class Backup:
         return self._proxmox.is_snapshot_existing(vm, snapshot_name)
 
     def backup_vm_disk(self, vm: VM,  disk: Disk, snapshot_name: str, is_backup_mode_incremental: bool, existing_backup_snapshot: str = None):
+        self._proxmox.init_vm_config(vm)
         image = rbd_image_from_proxmox_disk(disk)
         self.wait_for_rbd_image_snapshot_completion(vm, image, snapshot_name, self.get_snapshot_name_prefix())
 
@@ -264,11 +270,14 @@ class Backup:
     def get_vms_proxmox(self, from_cache=True) -> [VM]:
         if not from_cache:
             self._proxmox.update_vms(self._vms_to_ignore)
+        for vm in self._proxmox.get_vms():
+            self._proxmox.init_vm_config(vm, from_cache=from_cache)
         return self._proxmox.get_vms()
 
     def get_vm(self, uuid: str, from_cache=True) -> VM or None:
         vms = self.get_vms_proxmox(from_cache)
         for vm in vms:
+            self._proxmox.init_vm_config(vm, from_cache=from_cache)
             if vm.uuid == uuid:
                 return vm
         return None
