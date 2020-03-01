@@ -45,7 +45,16 @@ class RestorePoint:
         self._proxmox.update_storages(self._storages_to_ignore)
         self._proxmox.update_vms(self._vms_to_ignore)
 
-    def list_restore_points(self, vm_uuid: str):
+    def get_restore_points(self, vm_uuid: str):
+        """
+        :return: [
+            {
+                image: pool/image_name
+                name: restore_point_name
+                timestamp: datetime
+            }
+        ]
+        """
         image = f'{vm_uuid}_vm_metadata'
         tmp_points = []
 
@@ -59,11 +68,47 @@ class RestorePoint:
         tmp_points = sorted(tmp_points, key=lambda x: datetime.strptime(x['timestamp'], '%a %b %d %H:%M:%S %Y'))
         return tmp_points
 
-    def remove_restore_point(self, vm_uuid: str = None, restore_point: str = None, age: str = None, match: str = None):
+    def get_restore_point_detail(self, vm_uuid: str, restore_point: str, backup=None):
+        """
+        :return: {
+            'has_proxmox_snapshot': False or True
+            'timestamp': '%a %b %d %H:%M:%S %Y',
+            'images': [
+                {
+                    'image': 'rbd/image_name',
+                    'name': 'snapshot_name'
+                }
+            ]
+        }
+        """
+        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
+        tmp_images = []
+        result = {
+            'has_proxmox_snapshot': False,
+            'images': tmp_images,
+            'timestamp': self._ceph.get_rbd_snapshot(self._backup_rbd_pool, f'{vm_uuid}_vm_metadata', restore_point)['timestamp']
+        }
+
+        for image in images:
+            if vm_uuid and vm_uuid not in image:
+                continue
+            points = self._ceph.get_rbd_snapshots(self._backup_rbd_pool, image)
+            for point in points:
+                if restore_point != point['name']:
+                    continue
+                tmp_images.append({
+                    'image': f'{self._backup_rbd_pool}/{image}',
+                    "name": point['name']
+                })
+        if backup:
+            result['has_proxmox_snapshot'] = backup.is_vm_snapshot_existing(backup.get_vm(vm_uuid), restore_point)
+        return result
+
+    def remove_restore_point(self, vm_uuid: str = None, restore_point: str = None, age: str = None, match: str = None, backup=None):
         if not vm_uuid and not restore_point and not age and not match:
             raise ArgumentError('at least one parameter must be set; vm_uuid, restore_point, age or match')
-        if vm_uuid and not (restore_point or age):
-            raise ArgumentError('if vm_uuid is set, restore_point or age must be set')
+        if vm_uuid and not (restore_point or age or match):
+            raise ArgumentError('if vm_uuid is set, restore_point, age or match must be set')
 
         points_to_remove = []
         images = self._ceph.get_rbd_images(self._backup_rbd_pool)
@@ -87,4 +132,12 @@ class RestorePoint:
         for point in points_to_remove:
             log.info(f'remove {point["restore_point"]} from image {self._backup_rbd_pool}/{point["image"]}')
             self._ceph.remove_rbd_snapshot(self._backup_rbd_pool, point["image"], point["restore_point"])
+            if backup:
+                backup.remove_vm_snapshot(backup.get_vm(vm_uuid), point['restore_point'])
 
+    def remove_backup(self, vm_uuid: str):
+        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
+        for image in images:
+            if vm_uuid and vm_uuid not in image:
+                continue
+            self._ceph.remove_rbd_image(self._backup_rbd_pool, image)

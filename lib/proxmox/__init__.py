@@ -63,12 +63,13 @@ class Disk(Cacheable):
 
 class VM(Cacheable):
     status: bool
-    __rbd_disks: [Disk]
-    __config: str
+    _rbd_disks: [Disk]
+    _config: str
     node: Node
     name: str
     uuid: str
     id: int
+    _guest_agent_info: object
 
     def __init__(self, vm_id=0, uuid='', name='', node=None, rbd_disks=None, status=''):
         super().__init__()
@@ -76,17 +77,22 @@ class VM(Cacheable):
         self.uuid = uuid
         self.name = name
         self.node = node
-        self.__rbd_disks = rbd_disks if rbd_disks is not None else []
+        self._rbd_disks = rbd_disks if rbd_disks is not None else []
         self.running = True if status == 'running' else False
+        self._guest_agent_info = None
+        self._config = ''
+        self.status = False
 
     def __str__(self):
         return f'{self.name} (id={self.id}, uuid={self.uuid})'
 
     def __eq__(self, other):
+        if not hasattr(other, 'id'):
+            return False
         return self.id == other.id and (True if not self.uuid or not other.uuid else self.uuid == other.uuid)
 
     def set_config(self, config: [dict]):
-        self.__config = ''
+        self._config = ''
         cfg = sorted(config, key=lambda x: x['key'])
         description = ''
         for item in cfg:
@@ -109,11 +115,11 @@ class VM(Cacheable):
                 for description_line in item["value"].split('\n'):
                     description += f'#{description_line}\n'
             else:
-                self.__config += f'{item["key"]}: {item["value"]}\n'
-        self.__config = f'{description}{self.__config}'
+                self._config += f'{item["key"]}: {item["value"]}\n'
+        self._config = f'{description}{self._config}'
 
     def get_config(self):
-        return self.__config
+        return self._config
 
     def update_rbd_disks(self, storages: [Storage], disks_to_ignore=None, config: str = None):
         """vm.uuid has to be defined"""
@@ -121,11 +127,11 @@ class VM(Cacheable):
             raise RuntimeError('self.uuid is empty, this is required to filter excluded disks for this vm (specified in config)')
         if disks_to_ignore is None:
             disks_to_ignore = []
-        if not self.__config and not config:
+        if not self._config and not config:
             raise RuntimeError('config is None')
 
         disks = []
-        config = config if config else self.__config
+        config = config if config else self._config
         for line in config.split('\n'):
             if re.match(r'^(scsi|sata|ide|virtio|efidisk)\d', line) is None:  # TODO: add "unused". Proxmox does not create snapshots for this kind of disks.
                 continue
@@ -140,10 +146,16 @@ class VM(Cacheable):
                     continue
                 log.debug(f'found proxmox vm disk: {disk}')
                 disks.append(disk)
-        self.__rbd_disks = disks
+        self._rbd_disks = disks
 
     def get_rbd_disks(self):
-        return self.__rbd_disks
+        return self._rbd_disks
+
+    def set_guest_agent_info(self, agent_info: object):
+        self._guest_agent_info = agent_info
+
+    def get_guest_agent_info(self):
+        return self._guest_agent_info
 
 
 class Proxmox:
@@ -204,7 +216,6 @@ class Proxmox:
             for vm in tmp_vms:
                 tmp_vm = VM(vm['vmid'], name=vm['name'], node=node, status=vm['status'])
                 log.debug(f'found vm {tmp_vm.id} with name {tmp_vm.name}')
-                tmp_vm.set_config(self.session.nodes(node.id).qemu(tmp_vm.id).get('pending'))
 
                 # check if this vm should be excluded according to config
                 if tmp_vm.uuid in vms_to_ignore:
@@ -213,17 +224,21 @@ class Proxmox:
 
                 self._vms.append(tmp_vm)
 
+    def init_vm_config(self, vm: VM, from_cache: bool = True):
+        if not vm.get_config() or not from_cache:
+            vm.set_config(self.session.nodes(vm.node.id).qemu(vm.id).get('pending'))
+
     def get_vms(self):
         return self._vms
 
-    def create_vm_snapshot(self, vm: VM, name: str):
+    def create_vm_snapshot(self, vm: VM, name: str, tries: int):
+        self.init_vm_config(vm)
         log.info(f'create vm snapshot via proxmox api for {vm}')
         results = self.session.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
         if 'UPID' not in results:
             raise RuntimeError(f'unexpected result while creating proxmox vm snapshot of {vm} result: {results}')
         del results
 
-        tries = 500
         tries_attempted = tries
         succeed = False
         while not succeed and tries > 0:
@@ -240,8 +255,88 @@ class Proxmox:
             raise RuntimeError(f'proxmox vm snapshot creation of {vm} tined out after {tries_attempted} tries')
         log.debug(f'snapshot creation for {vm} was successful')
 
-    def delete_vm_snapshot(self, vm: VM, name: str):
-        self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
+    def remove_vm_snapshot(self, vm: VM, name: str):
+        if self.is_snapshot_existing(vm, name):
+            self.session.nodes(vm.node).qemu(vm.id).snapshot(name).delete()
 
     def get_snapshots(self, vm: VM):
-        return self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
+        snapshots = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
+        for snapshot in snapshots:
+            if snapshot['name'] == 'current':
+                # this is the proxmox dummy snapshot representing the current state, not an actual one
+                snapshots.remove(snapshot)
+
+        return snapshots
+
+    def is_snapshot_existing(self, vm: VM, snapshot_name: str):
+        snaps = self.get_snapshots(vm)
+        for snap in snaps:
+            if snap['name'] == snapshot_name:
+                return True
+        return False
+
+    def get_snapshot_current(self, vm: VM):
+        snapshots = self.session.nodes(vm.node).qemu(vm.id).get('snapshot')
+        current = None
+        # find dummy snapshot representing the current state
+        for snapshot in snapshots:
+            if snapshot['name'] == 'current':
+                current = snapshot
+                break
+        # return if the dummy snapshot could not be found or there is no parent snapshot
+        if not current or not current['parent']:
+            return None
+        # find the actual snapshot
+        for snapshot in snapshots:
+            if snapshot['name'] == current['parent']:
+                current = snapshot
+                break
+        return current
+
+    def update_agent_info(self, vm: VM):
+        agent_info = self.session.nodes(vm.node).qemu(vm.id).agent('info').get()
+        agent_info = agent_info['result'] if agent_info and agent_info['result'] else None
+        vm.set_guest_agent_info(agent_info)
+        return agent_info
+
+    def get_or_update_guest_agent_info(self, vm: VM):
+        agent_info = vm.get_guest_agent_info()
+        return agent_info if agent_info else self.update_agent_info(vm)
+
+    def is_guest_agent_running(self, vm: VM):
+        agent_info = self.get_or_update_guest_agent_info(vm)
+        return agent_info and agent_info['version'] and agent_info['supported_commands'] and len(agent_info['supported_commands']) > 0
+
+    def is_guest_agent_command_supported(self, vm: VM, command_name: str):
+        agent_info = self.get_or_update_guest_agent_info(vm)
+        if not self.is_guest_agent_running(vm):
+            return False
+        for command in agent_info['supported_commands']:
+            if command['name'] == command_name and command['enabled']:
+                return True
+        return False
+
+    def invoke_guest_agent_exec(self, vm: VM, command_name: str):
+        if not self.is_guest_agent_command_supported(vm, 'guest-exec'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post(command=command_name)
+
+    def invoke_guest_agent_fstrim(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fstrim'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fstrim')
+
+    def invoke_guest_agent_fs_freeze(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fsfreeze-freeze'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fsfreeze-freeze')
+
+    def invoke_guest_agent_fs_status(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fsfreeze-status'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fsfreeze-status')
+
+    def invoke_guest_agent_fs_unfreeze(self, vm: VM):
+        if not self.is_guest_agent_command_supported(vm, 'guest-fsfreeze-thaw'):
+            return False
+        return self.session.nodes(vm.node).qemu(vm.id).agent('exec').post('fsfreeze-thaw')

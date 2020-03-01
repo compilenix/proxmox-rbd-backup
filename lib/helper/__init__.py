@@ -42,6 +42,14 @@ def is_guid(value: str):
     return re.match(r'^' + REGEX_GUID + r'$', value)
 
 
+def unique_list(list: []):
+    tmp_list = []
+    for x in list:
+        if x not in tmp_list:
+            tmp_list.append(x)
+    return tmp_list
+
+
 LOGLEVEL_DEBUG = 0
 LOGLEVEL_INFO = 1
 LOGLEVEL_WARN = 2
@@ -90,7 +98,7 @@ class Log:
     def message(message: str, level: int) -> None:
         if Log._LOGLEVEL > level:
             return
-        message = f'[{datetime.utcnow()}] {map_loglevel_str(level)}: {message}'
+        message = f'[{datetime.now()}] {map_loglevel_str(level)}: {message}'
         if level == LOGLEVEL_DEBUG or level == LOGLEVEL_ERR:
             Log.print_std_err(message)
         else:
@@ -122,7 +130,7 @@ def sizeof_fmt(num: float, suffix: str = 'B') -> str:
 
 
 def exec_raw(command: str) -> str:
-    Log.debug(f'exec command "{command}"')
+    Log.debug(f'exec command \'{command}\'')
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     process.wait()
     if process.returncode != 0:
