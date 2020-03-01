@@ -239,14 +239,10 @@ class Backup:
             self.update_vm_ignore_disks(vm)
 
             existing_backup_snapshot_count, existing_backup_snapshot, existing_snapshot_matches_prefix = self.get_vm_backup_snapshot(vm, prefix, allow_using_any_existing_snapshot)
-            if existing_backup_snapshot_count > 1:
-                # TODO: implement
-                log.warn(f'latest backup is incomplete, re-processing')
-                raise RuntimeError(f'last backup is incomplete, re-processing. automatic repair not implemented, yet. Manual fixing required')
             is_backup_mode_incremental = None
             if existing_backup_snapshot_count == 0:
                 is_backup_mode_incremental = False
-            if existing_backup_snapshot_count == 1:
+            if existing_backup_snapshot_count >= 1:
                 is_backup_mode_incremental = True
 
             self._proxmox.create_vm_snapshot(vm, snapshot_name, self._wait_for_snapshot_tries)
