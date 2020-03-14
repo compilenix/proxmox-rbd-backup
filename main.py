@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-# TODO: ignore disks which are marked as "no backup" on proxmox
-# TODO: write all logged messages into buffer to be able to provide detailed context on exceptions
-# TODO: remove snapshots from unused disks?
-# TODO: partial restore / rollback: config, single and multiple disk(s)
-# TODO: mount restore point
-# TODO: restore file / directory of restore point
 
 import configparser
 import os.path

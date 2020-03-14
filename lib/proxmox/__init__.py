@@ -133,7 +133,7 @@ class VM(Cacheable):
         disks = []
         config = config if config else self._config
         for line in config.split('\n'):
-            if re.match(r'^(scsi|sata|ide|virtio|efidisk)\d', line) is None:  # TODO: add "unused". Proxmox does not create snapshots for this kind of disks.
+            if re.match(r'^(scsi|sata|ide|virtio|efidisk)\d', line) is None:
                 continue
             for storage in storages:
                 if f': {storage}:' not in line:

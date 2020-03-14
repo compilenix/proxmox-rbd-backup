@@ -114,7 +114,6 @@ class Backup:
         log.debug(f'save current config into metadata image -> /tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf')
         with open(f'/tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf', 'w') as config_file:
             print(vm.get_config(), file=config_file)
-            # TODO: add hooking-system to call external scripts which may include more metadata export variables using ENV
         del config_file
 
         unmount_rbd_metadata_image(rbd_image_vm_metadata_name)
