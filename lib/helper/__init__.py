@@ -83,6 +83,7 @@ def map_loglevel(level: str):
 
 class Log:
     _LOGLEVEL = LOGLEVEL_INFO
+    _log_buffer = ""
 
     @staticmethod
     def set_loglevel(level: int):
@@ -96,13 +97,18 @@ class Log:
 
     @staticmethod
     def message(message: str, level: int) -> None:
+        message = f'[{datetime.now()}] {map_loglevel_str(level)}: {message}'
+        Log._log_buffer += message + '\n'
         if Log._LOGLEVEL > level:
             return
-        message = f'[{datetime.now()}] {map_loglevel_str(level)}: {message}'
         if level == LOGLEVEL_DEBUG or level == LOGLEVEL_ERR:
             Log.print_std_err(message)
         else:
             print(message, flush=True)
+
+    @staticmethod
+    def get_log_buffer():
+        return Log._log_buffer
 
     @staticmethod
     def debug(message: str):
