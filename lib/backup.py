@@ -274,7 +274,8 @@ class Backup:
         return tmp_vms
 
     def get_vms_proxmox(self, from_cache=True) -> [VM]:
-        if not from_cache:
+        vms = self._proxmox.get_vms()
+        if not from_cache or not vms or len(vms) == 0:
             self._proxmox.update_vms(self._vms_to_ignore)
         for vm in self._proxmox.get_vms():
             self._proxmox.init_vm_config(vm, from_cache=from_cache)
