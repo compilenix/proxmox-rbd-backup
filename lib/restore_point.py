@@ -132,7 +132,7 @@ class RestorePoint:
         for point in points_to_remove:
             log.info(f'remove {point["restore_point"]} from image {self._backup_rbd_pool}/{point["image"]}')
             self._ceph.remove_rbd_snapshot(self._backup_rbd_pool, point["image"], point["restore_point"])
-            if backup:
+            if backup and vm_uuid:
                 backup.remove_vm_snapshot(backup.get_vm(vm_uuid), point['restore_point'])
 
     def remove_backup(self, vm_uuid: str):
