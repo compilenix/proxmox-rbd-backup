@@ -3,6 +3,8 @@ __copyright__ = '(c) Oleg Butovich 2013-2017'
 __licence__ = 'MIT'
 
 import posixpath
+import time
+
 from requests.cookies import cookiejar_from_dict
 from .https import Backend, ProxmoxHTTPAuth
 from ..helper import Log as log
@@ -63,7 +65,7 @@ class ProxmoxResource(ProxmoxResourceBase):
 
         return self.__class__(**kwargs)
 
-    def _request(self, method, data=None, params=None):
+    def _request(self, method, data=None, params=None, retries_non_server_error=3):
         url = self._store["base_url"]
         if data:
             log.debug(f'{method} {url} {data}')
@@ -83,6 +85,11 @@ class ProxmoxResource(ProxmoxResourceBase):
             self._store['session'].cookies = cookiejar_from_dict({"PVEAuthCookie": self._store['session'].auth.pve_auth_cookie})
             log.debug('Retry original request.')
             return self._request(method, data=data, params=params)
+
+        if resp.status_code >= 500 and retries_non_server_error > 0:
+            log.warn(f'Received {resp.status_code}, retry {retries_non_server_error} times after waiting 10 seconds')
+            time.sleep(10)
+            return self._request(method, data=data, params=params, retries_non_server_error=retries_non_server_error - 1)
 
         if resp.status_code >= 400:
             if hasattr(resp, 'reason'):
