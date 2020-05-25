@@ -4,7 +4,7 @@ import time
 from .ceph import Ceph, Image
 from .helper import *
 from .helper import Log as log
-from .proxmox import Proxmox, Disk, VM
+from .proxmox import Proxmox, Disk, VM, Storage
 from .filesystem import mount_rbd_metadata_image, unmount_rbd_metadata_image
 
 
@@ -132,7 +132,7 @@ class Backup:
             if section == vm.uuid and 'ignore_disks' in self._config[section] and self._config[section]['ignore_disks']:
                 for disk in self._config[section]['ignore_disks'].replace(' ', '').split(','):
                     disk = disk.split('/')
-                    disks_to_ignore.append(Disk(disk[0], disk[1]))
+                    disks_to_ignore.append(str(Disk(disk[1], Storage(disk[0]))))
         vm.update_rbd_disks(self._proxmox.get_storages(), disks_to_ignore)
 
     def get_vm_backup_snapshot(self, vm: VM, snapshot_name_prefix: str, allow_using_any_existing_snapshot: bool = False):
@@ -234,8 +234,8 @@ class Backup:
         for vm in tmp_vms:
             snapshot_name = prefix + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
 
-            self.update_metadata(vm, snapshot_name)
             self.update_vm_ignore_disks(vm)
+            self.update_metadata(vm, snapshot_name)
 
             existing_backup_snapshot_count, existing_backup_snapshot, existing_snapshot_matches_prefix = self.get_vm_backup_snapshot(vm, prefix, allow_using_any_existing_snapshot)
             is_backup_mode_incremental = None

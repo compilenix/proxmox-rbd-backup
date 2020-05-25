@@ -71,7 +71,7 @@ class VM(Cacheable):
     id: int
     _guest_agent_info: object
 
-    def __init__(self, vm_id=0, uuid='', name='', node=None, rbd_disks=None, status=''):
+    def __init__(self, vm_id=0, uuid='unknown', name='unknown', node=None, rbd_disks=None, status='unknown'):
         super().__init__()
         self.id = vm_id
         self.uuid = uuid
@@ -141,7 +141,7 @@ class VM(Cacheable):
                 disk = line.replace(' ', '').split(':')[2]  # remove spaces, remove config key and split disk storage name from disk name
                 disk = disk.split(',')[0]  # remove optional disk parameters
                 disk = Disk(disk, storage)
-                if disk in disks_to_ignore:
+                if str(disk) in disks_to_ignore:
                     log.debug(f'ignore proxmox vm disk: {disk} as requested by config [{self.uuid} (name={self.name}, id={self.id})] -> \"ignore_disks\": {", ".join(disks_to_ignore)}')
                     continue
                 log.debug(f'found proxmox vm disk: {disk}')
@@ -215,11 +215,12 @@ class Proxmox:
             tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
             for vm in tmp_vms:
                 tmp_vm = VM(vm['vmid'], name=vm['name'], node=node, status=vm['status'])
-                log.debug(f'found vm {tmp_vm.id} with name {tmp_vm.name}')
+                self.init_vm_config(tmp_vm)
+                log.debug(f'found vm: {tmp_vm}')
 
                 # check if this vm should be excluded according to config
                 if tmp_vm.uuid in vms_to_ignore:
-                    log.debug(f'ignore vm as requested ({tmp_vm})')
+                    log.debug(f'ignore vm as requested by config ({tmp_vm})')
                     continue
 
                 self._vms.append(tmp_vm)
