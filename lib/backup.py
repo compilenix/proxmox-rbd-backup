@@ -244,6 +244,9 @@ class Backup:
             if existing_backup_snapshot_count >= 1:
                 is_backup_mode_incremental = True
 
+            if not self._proxmox.is_feature_available('snapshot', vm):
+                log.warn(f'The snapshot feature is currently not available for {vm}.')
+                continue
             self._proxmox.create_vm_snapshot(vm, snapshot_name, self._wait_for_snapshot_tries)
 
             for disk in vm.get_rbd_disks():
@@ -291,3 +294,6 @@ class Backup:
             if vm.uuid == uuid:
                 return vm
         return None
+
+    def is_feature_available(self, feature: str, for_vm: VM):
+        return self._proxmox.is_feature_available(feature, for_vm)

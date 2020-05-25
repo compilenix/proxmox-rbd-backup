@@ -316,6 +316,9 @@ class Proxmox:
                 return True
         return False
 
+    def is_feature_available(self, feature: str, vm: VM):
+        return self.session.nodes(vm.node).qemu(vm.id).get('feature', feature=feature)['hasFeature']
+
     def invoke_guest_agent_exec(self, vm: VM, command_name: str):
         if not self.is_guest_agent_command_supported(vm, 'guest-exec'):
             return False
