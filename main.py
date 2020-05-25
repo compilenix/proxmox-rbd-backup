@@ -214,7 +214,8 @@ except KeyboardInterrupt:
 
 except Exception as e:
     log.error(f'unexpected exception (probably a bug): {e}')
-    print('=========================  DEBUG LOG  =========================')
-    print(log.get_log_buffer())
+    if log.get_loglevel() != LOGLEVEL_DEBUG:
+        print('=========================  DEBUG LOG  =========================')
+        print(log.get_log_buffer())
     print('=========================  TRACEBACK  =========================')
     traceback.print_exc()

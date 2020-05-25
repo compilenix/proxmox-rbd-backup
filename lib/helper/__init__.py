@@ -92,6 +92,10 @@ class Log:
         Log._LOGLEVEL = level
 
     @staticmethod
+    def get_loglevel():
+        return Log._LOGLEVEL
+
+    @staticmethod
     def print_std_err(message: str) -> None:
         print(message, file=sys.stderr, flush=True)
 
