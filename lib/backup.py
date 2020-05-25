@@ -269,6 +269,9 @@ class Backup:
             if not re.match(r'^' + REGEX_GUID + '_vm_metadata$', image):
                 continue
             image_metas = self._ceph.list_rbd_image_meta(self._backup_rbd_pool, image)
+            if not image_metas:
+                log.warn(f'backup image {self._backup_rbd_pool}/{image} does not have any metadata')
+                continue
             tmp_vms.append(image_metas)
         tmp_vms = sorted(tmp_vms, key=lambda x: x['vm.id'])
         return tmp_vms

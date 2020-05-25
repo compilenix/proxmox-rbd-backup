@@ -144,6 +144,10 @@ def exec_raw(command: str) -> str:
     return str(process.stdout.read().decode("utf-8")).strip("\n")
 
 
+def parse_json(json_str: str):
+    return json.loads(json_str, encoding='UTF-8')
+
+
 def exec_parse_json(command: str):
     return json.loads(exec_raw(command), encoding='UTF-8')
 

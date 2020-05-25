@@ -35,6 +35,8 @@ class Ceph:
             "timestamp": "Sat Feb 29 00:50:17 2020"
         }]
         """
+        if not self.is_rbd_image_existing(pool, image, command_inject=command_inject):
+            return []
         return exec_parse_json(f'{command_inject + " " if command_inject else "" }rbd -p {pool} snap ls --format json {image}')
 
     def get_rbd_snapshot(self, pool: str, image: str, name: str, command_inject: str = ''):
@@ -133,7 +135,10 @@ class Ceph:
         return exec_parse_json(f'{command_inject + " " if command_inject else "" }' + 'rbd device list --format json')
 
     def list_rbd_image_meta(self, pool: str, image: str, command_inject: str = ''):
-        return exec_parse_json(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta list {pool}/{image} --format json')
+        result = exec_raw(f'{command_inject + " " if command_inject else "" }rbd image-meta list {pool}/{image} --format json')
+        if result and len(result) > 2:
+            return parse_json(result)
+        return None
 
     def get_rbd_image_meta(self, pool: str, image: str, key: str, command_inject: str = ''):
         return exec_raw(f'{command_inject + " " if command_inject else "" }' + f'rbd image-meta get {pool}/{image} "{key}"')
