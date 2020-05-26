@@ -235,7 +235,7 @@ class Proxmox:
     def create_vm_snapshot(self, vm: VM, name: str, tries: int):
         self.init_vm_config(vm)
         log.info(f'create vm snapshot via proxmox api for {vm}')
-        results = self.session.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!!automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
+        results = self.session.nodes(vm.node).qemu(vm.id).post('snapshot', snapname=name, vmstate=0, description='!!!DO NOT REMOVE!!! automated snapshot by proxmox-rbd-backup. !!!DO NOT REMOVE!!!')
         if 'UPID' not in results:
             raise RuntimeError(f'unexpected result while creating proxmox vm snapshot of {vm} result: {results}')
         del results
