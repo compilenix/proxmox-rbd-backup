@@ -232,6 +232,7 @@ class Backup:
         tmp_vms = vms if not is_list_empty(vms) else self._proxmox.get_vms()
         prefix = snapshot_name_prefix if snapshot_name_prefix else self.get_snapshot_name_prefix()
         error_occurred = False
+        most_recent_exception = None
 
         for vm in tmp_vms:
             try:
@@ -258,12 +259,13 @@ class Backup:
                     self._proxmox.remove_vm_snapshot(vm, existing_backup_snapshot)
             except Exception as e:
                 error_occurred = True
+                most_recent_exception = e
                 log.error(f'unexpected exception (probably a bug): {e}')
-                log.error(traceback.print_exc())
+                log.error(traceback.format_exc())
 
         if error_occurred:
             log.error('one or more errors occurred, raising most recent exception')
-            raise e
+            raise most_recent_exception
 
     def get_vms(self):
         """

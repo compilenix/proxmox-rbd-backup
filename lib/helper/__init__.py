@@ -103,9 +103,11 @@ class Log:
     def message(message: str, level: int) -> None:
         message = f'[{datetime.now()}] {map_loglevel_str(level)}: {message}'
         Log._log_buffer += message + '\n'
-        if Log._LOGLEVEL > level:
+        if Log.get_loglevel() > level:
+            if level >= LOGLEVEL_INFO:
+                Log.print_std_err(message)
             return
-        if level == LOGLEVEL_DEBUG or level == LOGLEVEL_ERR:
+        if level == LOGLEVEL_ERR:
             Log.print_std_err(message)
         else:
             print(message, flush=True)
