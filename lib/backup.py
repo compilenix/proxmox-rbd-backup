@@ -213,7 +213,7 @@ class Backup:
                 compression_command_unpack = ''
                 pv_name_network = 'network'
             log.info(f'incremental backup, starting for {vm} -> {image}')
-            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export-diff --no-progress --from-snap {existing_backup_snapshot} {image}@{snapshot_name} -{compression_command_pack}" | pv --rate --bytes --timer -c -N {pv_name_network} {compression_command_unpack} | pv --rate --bytes --timer -c -N import-diff | rbd import-diff --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name} 2>&1')
+            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export-diff --no-progress --from-snap {existing_backup_snapshot} {image}@{snapshot_name} -{compression_command_pack}" | pv --rate --bytes --timer -c -N {pv_name_network} {compression_command_unpack} | pv --rate --bytes --timer -c -N import-diff | rbd import-diff --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
             log.info(f'incremental backup of {vm} -> {image} complete')
         else:
             if self._config['global']['enable_transport_compression_initial'].lower() != 'true':
@@ -222,7 +222,7 @@ class Backup:
                 pv_name_network = 'network'
             log.info(f'initial backup, starting full copy of {vm} -> {image}')
             image_size = exec_parse_json(f'{self._remote_connection_command} rbd info {image} --format json')['size']
-            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export --no-progress {image}@{snapshot_name} -{compression_command_pack}" | pv --rate --bytes --timer -c -N {pv_name_network} {compression_command_unpack} | pv --rate --bytes --progress --timer --eta --size {image_size} -c -N import | rbd import --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name} 2>&1')
+            exec_raw(f'/bin/bash -c set -o pipefail; {self._remote_connection_command} "rbd export --no-progress {image}@{snapshot_name} -{compression_command_pack}" | pv --rate --bytes --timer -c -N {pv_name_network} {compression_command_unpack} | pv --rate --bytes --progress --timer --eta --size {image_size} -c -N import | rbd import --no-progress - {self._backup_rbd_pool}/{vm.uuid}-{image.pool}-{image.name}')
             self._ceph.create_rbd_snapshot(self._backup_rbd_pool, f'{vm.uuid}-{image.pool}-{image.name}', new_snapshot_name=snapshot_name)
             log.info(f'initial backup of {vm} -> {image} complete')
 
