@@ -217,5 +217,4 @@ except Exception as e:
     if log.get_loglevel() != LOGLEVEL_DEBUG:
         print('=========================  DEBUG LOG  =========================')
         print(log.get_log_buffer())
-    print('=========================  TRACEBACK  =========================')
     traceback.print_exc()

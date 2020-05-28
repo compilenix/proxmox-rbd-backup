@@ -1,6 +1,7 @@
 import configparser
 import random
 import time
+import traceback
 from .ceph import Ceph, Image
 from .helper import *
 from .helper import Log as log
@@ -230,29 +231,39 @@ class Backup:
     def run_backup(self, vms: [VM] = None, snapshot_name_prefix: str = None, allow_using_any_existing_snapshot: bool = False):
         tmp_vms = vms if not is_list_empty(vms) else self._proxmox.get_vms()
         prefix = snapshot_name_prefix if snapshot_name_prefix else self.get_snapshot_name_prefix()
+        error_occurred = False
 
         for vm in tmp_vms:
-            snapshot_name = prefix + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
+            try:
+                snapshot_name = prefix + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
 
-            self.update_vm_ignore_disks(vm)
-            self.update_metadata(vm, snapshot_name)
+                self.update_vm_ignore_disks(vm)
+                self.update_metadata(vm, snapshot_name)
 
-            existing_backup_snapshot_count, existing_backup_snapshot, existing_snapshot_matches_prefix = self.get_vm_backup_snapshot(vm, prefix, allow_using_any_existing_snapshot)
-            is_backup_mode_incremental = None
-            if existing_backup_snapshot_count == 0:
-                is_backup_mode_incremental = False
-            if existing_backup_snapshot_count >= 1:
-                is_backup_mode_incremental = True
+                existing_backup_snapshot_count, existing_backup_snapshot, existing_snapshot_matches_prefix = self.get_vm_backup_snapshot(vm, prefix, allow_using_any_existing_snapshot)
+                is_backup_mode_incremental = None
+                if existing_backup_snapshot_count == 0:
+                    is_backup_mode_incremental = False
+                if existing_backup_snapshot_count >= 1:
+                    is_backup_mode_incremental = True
 
-            if not self._proxmox.is_feature_available('snapshot', vm):
-                log.warn(f'The snapshot feature is currently not available for {vm}.')
-                continue
-            self._proxmox.create_vm_snapshot(vm, snapshot_name, self._wait_for_snapshot_tries)
+                if not self._proxmox.is_feature_available('snapshot', vm):
+                    log.warn(f'The snapshot feature is currently not available for {vm}.')
+                    continue
+                self._proxmox.create_vm_snapshot(vm, snapshot_name, self._wait_for_snapshot_tries)
 
-            for disk in vm.get_rbd_disks():
-                self.backup_vm_disk(vm, disk, snapshot_name, is_backup_mode_incremental, existing_backup_snapshot)
-            if is_backup_mode_incremental and existing_snapshot_matches_prefix:
-                self._proxmox.remove_vm_snapshot(vm, existing_backup_snapshot)
+                for disk in vm.get_rbd_disks():
+                    self.backup_vm_disk(vm, disk, snapshot_name, is_backup_mode_incremental, existing_backup_snapshot)
+                if is_backup_mode_incremental and existing_snapshot_matches_prefix:
+                    self._proxmox.remove_vm_snapshot(vm, existing_backup_snapshot)
+            except Exception as e:
+                error_occurred = True
+                log.error(f'unexpected exception (probably a bug): {e}')
+                log.error(traceback.print_exc())
+
+        if error_occurred:
+            log.error('one or more errors occurred, raising most recent exception')
+            raise e
 
     def get_vms(self):
         """
