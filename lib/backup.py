@@ -88,37 +88,52 @@ class Backup:
         rbd_image_vm_metadata_name = vm.uuid + '_vm_metadata'
         log.info(f'save current config into vm metadata image of vm {vm.uuid} (id={vm.id}, name={vm.name})')
         is_vm_metadata_existing = self._ceph.is_rbd_image_existing(self._backup_rbd_pool, rbd_image_vm_metadata_name)
-        if is_vm_metadata_existing:
-            # map vm metadata image
-            mapped_image_path = self._ceph.map_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
-            # mount vm metadata image
-            mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
-        else:
-            # create vm metadata image
-            log.info('metadata image for vm not existing; creating...')
-            self._ceph.create_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name, self._config['global']['vm_metadata_image_size'])
-            is_vm_metadata_existing = self._ceph.is_rbd_image_existing(self._backup_rbd_pool, rbd_image_vm_metadata_name)
-            if not is_vm_metadata_existing:
-                raise RuntimeError(f'ceph metadata image for vm is not existing right after creation, this may be a transient error: {rbd_image_vm_metadata_name}')
-            if 'ceph_backup_disable_rbd_image_features_for_metadata' in self._config['global'] and len(self._config['global']['ceph_backup_disable_rbd_image_features_for_metadata']) > 0:
-                # disable metadata image features (if needed)
-                exec_raw(f'rbd feature disable {rbd_image_vm_metadata_name} {" ".join(self._config["global"]["ceph_backup_disable_rbd_image_features_for_metadata"].replace(" ", "").split(","))}')
-            # map metadata image
-            mapped_image_path = self._ceph.map_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
-            # format metadata image
-            exec_raw(f'/usr/sbin/mkfs.ext4 -L {rbd_image_vm_metadata_name[0:16]} {mapped_image_path}')
-            # mount metadata image
-            mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
-        del is_vm_metadata_existing
 
-        # save current config into metadata image
-        log.debug(f'save current config into metadata image -> /tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf')
-        with open(f'/tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf', 'w') as config_file:
-            print(vm.get_config(), file=config_file)
-        del config_file
+        # create or update vm metadata image
+        # in case of an error we try to unmount and unmap the vm metadata image
+        try:
+            if is_vm_metadata_existing:
+                # map vm metadata image
+                mapped_image_path = self._ceph.map_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+                # mount vm metadata image
+                mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
+            else:
+                # create vm metadata image
+                log.info('metadata image for vm not existing; creating...')
+                self._ceph.create_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name, self._config['global']['vm_metadata_image_size'])
+                is_vm_metadata_existing = self._ceph.is_rbd_image_existing(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+                if not is_vm_metadata_existing:
+                    raise RuntimeError(f'ceph metadata image for vm is not existing right after creation, this may be a transient error: {rbd_image_vm_metadata_name}')
+                if 'ceph_backup_disable_rbd_image_features_for_metadata' in self._config['global'] and len(self._config['global']['ceph_backup_disable_rbd_image_features_for_metadata']) > 0:
+                    # disable metadata image features (if needed)
+                    exec_raw(f'rbd feature disable {rbd_image_vm_metadata_name} {" ".join(self._config["global"]["ceph_backup_disable_rbd_image_features_for_metadata"].replace(" ", "").split(","))}')
+                # map metadata image
+                mapped_image_path = self._ceph.map_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+                # format metadata image
+                exec_raw(f'/usr/sbin/mkfs.ext4 -L {rbd_image_vm_metadata_name[0:16]} {mapped_image_path}')
+                # mount metadata image
+                mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
 
-        unmount_rbd_metadata_image(rbd_image_vm_metadata_name)
-        self._ceph.unmap_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+            # save current config into metadata image
+            log.debug(f'save current config into metadata image -> /tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf')
+            with open(f'/tmp/{rbd_image_vm_metadata_name}/{vm.id}.conf', 'w') as config_file:
+                print(vm.get_config(), file=config_file)
+
+            unmount_rbd_metadata_image(rbd_image_vm_metadata_name)
+            self._ceph.unmap_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+        except Exception as e:
+            # noinspection PyBroadException
+            try:
+                unmount_rbd_metadata_image(rbd_image_vm_metadata_name)
+            except Exception:
+                pass
+            # noinspection PyBroadException
+            try:
+                self._ceph.unmap_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
+            except Exception:
+                pass
+            raise e
+
         self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.id', str(vm.id))
         self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.uuid', str(vm.uuid))
         self._ceph.set_rbd_image_meta(self._backup_rbd_pool, rbd_image_vm_metadata_name, 'vm.name', str(vm.name))
@@ -262,6 +277,7 @@ class Backup:
                 most_recent_exception = e
                 log.error(f'unexpected exception (probably a bug): {e}')
                 log.error(traceback.format_exc())
+            break
 
         if error_occurred:
             log.error('one or more errors occurred, raising most recent exception')
