@@ -106,7 +106,7 @@ class Backup:
             # map metadata image
             mapped_image_path = self._ceph.map_rbd_image(self._backup_rbd_pool, rbd_image_vm_metadata_name)
             # format metadata image
-            exec_raw(f'mkfs.ext4 -L {rbd_image_vm_metadata_name[0:16]} {mapped_image_path}')
+            exec_raw(f'/usr/sbin/mkfs.ext4 -L {rbd_image_vm_metadata_name[0:16]} {mapped_image_path}')
             # mount metadata image
             mount_rbd_metadata_image(rbd_image_vm_metadata_name, mapped_image_path)
         del is_vm_metadata_existing
