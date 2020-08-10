@@ -87,8 +87,17 @@ try:
             else:
                 backup.set_snapshot_name_prefix(config['global']['snapshot_name_prefix'])
 
+            if os.path.isfile('/tmp/proxmox-rbd-backup.lock'):
+                print('There is already an instance running, abort', file=sys.stderr, flush=True)
+                exit(0)
+
+            lock_file = open('/tmp/proxmox-rbd-backup.lock', 'w')
+            lock_file.write(str(os.getpid()))
+            lock_file.close()
+
             if not vms_uuid and not vm_name_match:
                 backup.run_backup(allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
+                os.remove('/tmp/proxmox-rbd-backup.lock')
                 exit(0)
 
             existing_vms = backup.get_vms_proxmox()
@@ -105,6 +114,7 @@ try:
                         tmp_vms.append(existing_vms[i])
             tmp_vms = unique_list(tmp_vms)
             backup.run_backup(tmp_vms, allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
+            os.remove('/tmp/proxmox-rbd-backup.lock')
         if re.match(r'^(list|ls)$', args.action_backup):
             tmp_vms = []
             for vm in backup.get_vms():
