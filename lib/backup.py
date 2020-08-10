@@ -277,7 +277,6 @@ class Backup:
                 most_recent_exception = e
                 log.error(f'unexpected exception (probably a bug): {e}')
                 log.error(traceback.format_exc())
-            break
 
         if error_occurred:
             log.error('one or more errors occurred, raising most recent exception')
