@@ -212,7 +212,6 @@ class Proxmox:
         for node in self._nodes:
             log.info(f'get vm\'s from node {node.id}')
             tmp_vms = self.session.nodes(node.id).qemu.get()
-            tmp_vms = sorted(tmp_vms, key=lambda x: x['vmid'])
             for vm in tmp_vms:
                 tmp_vm = VM(vm['vmid'], name=vm['name'], node=node, status=vm['status'])
                 self.init_vm_config(tmp_vm)
@@ -224,6 +223,7 @@ class Proxmox:
                     continue
 
                 self._vms.append(tmp_vm)
+        self._vms = sorted(self._vms, key=lambda x: x['vmid'])
 
     def init_vm_config(self, vm: VM, from_cache: bool = True):
         if not vm.get_config() or not from_cache:
