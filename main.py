@@ -221,6 +221,7 @@ try:
 
 except KeyboardInterrupt:
     log.warn('Interrupt, terminating...')
+    exit(100)
 
 except Exception as e:
     log.error(f'unexpected exception (probably a bug): {e}')
@@ -228,3 +229,4 @@ except Exception as e:
         print('=========================  DEBUG LOG  =========================')
         print(log.get_log_buffer())
     traceback.print_exc()
+    exit(1)
