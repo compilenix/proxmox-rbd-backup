@@ -223,7 +223,7 @@ class Proxmox:
                     continue
 
                 self._vms.append(tmp_vm)
-        self._vms = sorted(self._vms, key=lambda x: x['vmid'])
+        self._vms = sorted(self._vms, key=lambda x: x.id)
 
     def init_vm_config(self, vm: VM, from_cache: bool = True):
         if not vm.get_config() or not from_cache:
