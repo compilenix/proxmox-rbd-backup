@@ -259,6 +259,15 @@ class Backup:
                     log.warn(f'The snapshot feature is currently not available for {vm}.')
                     continue
 
+                if vm.agent:
+                    if not self._proxmox.is_guest_agent_running(vm):
+                        log.warn(f'Guest Agent Tools are not running, this is required if "QEMU Guest Agent" is set to "Enabled" in Proxmox')
+                        continue
+
+                    if not self._proxmox.is_guest_agent_command_supported(vm, 'guest-fsfreeze-freeze'):
+                        log.warn(f'Guest Agent Tools do not support command "guest-fsfreeze-freeze", which is required if "QEMU Guest Agent" is set to "Enabled" in Proxmox')
+                        continue
+
                 self.update_metadata(vm, snapshot_name)
 
                 existing_backup_snapshot_count, existing_backup_snapshot, existing_snapshot_matches_prefix = self.get_vm_backup_snapshot(vm, prefix, allow_using_any_existing_snapshot)
