@@ -254,6 +254,11 @@ class Backup:
                 snapshot_name = prefix + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
 
                 self.update_vm_ignore_disks(vm)
+
+                if not self._proxmox.is_feature_available('snapshot', vm):
+                    log.warn(f'The snapshot feature is currently not available for {vm}.')
+                    continue
+
                 self.update_metadata(vm, snapshot_name)
 
                 existing_backup_snapshot_count, existing_backup_snapshot, existing_snapshot_matches_prefix = self.get_vm_backup_snapshot(vm, prefix, allow_using_any_existing_snapshot)
@@ -263,9 +268,6 @@ class Backup:
                 if existing_backup_snapshot_count >= 1:
                     is_backup_mode_incremental = True
 
-                if not self._proxmox.is_feature_available('snapshot', vm):
-                    log.warn(f'The snapshot feature is currently not available for {vm}.')
-                    continue
                 self._proxmox.create_vm_snapshot(vm, snapshot_name, self._wait_for_snapshot_tries)
 
                 for disk in vm.get_rbd_disks():
