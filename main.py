@@ -26,14 +26,16 @@ parser_backup_list = subparsers_backup.add_parser('list', aliases=['ls'], help='
 # backup run
 parser_backup_run = subparsers_backup.add_parser('run', help='perform backup')
 parser_backup_run.add_argument('--vm_uuid', action='store', nargs='*', help='perform backup of this vm(s)')
-parser_backup_run.add_argument('--match', action='store', help='perform backup of vm(s) which match the given regex')
+parser_backup_run.add_argument('--vm_id', action='store', nargs='*', help='perform backup of this vm(s)')
+parser_backup_run.add_argument('--vm_name', action='store', help='perform backup of this vm(s) (regex)')
 parser_backup_run.add_argument('--snapshot_name_prefix', action='store', help='override "snapshot_name_prefix" from config')
 parser_backup_run.add_argument('--allow_using_any_existing_snapshot', action='store_true', help='use the latest existing snapshot, instead of one that matches the snapshot_name_prefix. This implies that the existing found snapshot will not be removed after backup completion, if it does not match snapshot_name_prefix.This option is mostly used for adding a new backup interval to an existing backup (only the first backup of that interval needs this option) or for manual / temporary / development backups.')
 
 # backup remove
 parser_backup_remove = subparsers_backup.add_parser('remove', aliases=['rm'], help='remove a backup')
 parser_backup_remove.add_argument('--vm_uuid', action='store', nargs='*', help='remove backup of this vm(s)')
-parser_backup_remove.add_argument('--match', action='store', help='remove backup of vm(s) which match the given regex')
+parser_backup_remove.add_argument('--vm_id', action='store', nargs='*', help='remove backup of this vm(s)')
+parser_backup_remove.add_argument('--vm_name', action='store', help='remove backup of vm(s) which match the given regex')
 parser_backup_remove.add_argument('--force', action='store_true', help='remove restore points, too')
 
 # restore-point
@@ -76,9 +78,14 @@ try:
     if args.action == 'backup':
         backup = Backup(servers, config)
         if args.action_backup == 'run':
+            if os.path.isfile('/tmp/proxmox-rbd-backup.lock'):
+                print('There is already an instance running, abort', file=sys.stderr, flush=True)
+                exit(1)
+
             backup.init_proxmox()
             vms_uuid = args.vm_uuid
-            vm_name_match = args.match
+            vms_id = args.vm_id
+            vm_name_match = args.vm_name
             snapshot_name_prefix = args.snapshot_name_prefix
             allow_using_any_existing_snapshot = args.allow_using_any_existing_snapshot
 
@@ -86,10 +93,6 @@ try:
                 backup.set_snapshot_name_prefix(snapshot_name_prefix)
             else:
                 backup.set_snapshot_name_prefix(config['global']['snapshot_name_prefix'])
-
-            if os.path.isfile('/tmp/proxmox-rbd-backup.lock'):
-                print('There is already an instance running, abort', file=sys.stderr, flush=True)
-                exit(1)
 
             lock_file = open('/tmp/proxmox-rbd-backup.lock', 'w')
             lock_file.write(str(os.getpid()))
@@ -106,6 +109,11 @@ try:
             if vms_uuid and len(vms_uuid) > 0:
                 for i, vm_uuid in enumerate(vms_uuid):
                     if vm_uuid in map(lambda x: x.uuid, existing_vms):
+                        tmp_vms.append(existing_vms[i])
+
+            if vms_id and len(vms_id) > 0:
+                for i, vm_id in enumerate(vms_id):
+                    if vm_id in map(lambda x: x.id, existing_vms):
                         tmp_vms.append(existing_vms[i])
 
             if vm_name_match:
@@ -128,7 +136,8 @@ try:
             print(tabulate(tmp_vms, headers='keys'))
         if re.match(r'^(remove|rm)$', args.action_backup):
             vms_uuid = args.vm_uuid
-            vm_name_match = args.match
+            vms_id = args.vm_id
+            vm_name_match = args.vm_name
             force = args.force
 
             if is_list_empty(vms_uuid) and not vm_name_match:
@@ -140,11 +149,23 @@ try:
             vms_proxmox = backup.get_vms_proxmox()
             vm_backups = backup.get_vms()
             tmp_vms = []  # type: [VM]
+
             if vms_uuid and len(vms_uuid) > 0:
                 done = False
                 for vm_uuid in vms_uuid:
                     for vm in vms_proxmox:
                         if vm.uuid == vm_uuid:
+                            tmp_vms.append(vm)
+                            done = True
+                            break
+                    if done:
+                        break
+
+            if vms_id and len(vms_id) > 0:
+                done = False
+                for vm_id in vms_id:
+                    for vm in vms_proxmox:
+                        if vm.id == vm_id:
                             tmp_vms.append(vm)
                             done = True
                             break
