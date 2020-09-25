@@ -89,7 +89,7 @@ try:
 
             if os.path.isfile('/tmp/proxmox-rbd-backup.lock'):
                 print('There is already an instance running, abort', file=sys.stderr, flush=True)
-                exit(0)
+                exit(1)
 
             lock_file = open('/tmp/proxmox-rbd-backup.lock', 'w')
             lock_file.write(str(os.getpid()))
