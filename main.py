@@ -107,38 +107,26 @@ try:
             tmp_vms = []
 
             if vms_uuid and len(vms_uuid) > 0:
-                done = False
                 for vm_uuid in vms_uuid:
                     for vm in existing_vms:
                         if vm.uuid == vm_uuid:
                             tmp_vms.append(vm)
-                            done = True
                             break
-                    if done:
-                        break
 
             if vms_id and len(vms_id) > 0:
-                done = False
                 for vm_id in vms_id:
                     for vm in existing_vms:
                         if vm.id == vm_id:
                             tmp_vms.append(vm)
-                            done = True
                             break
-                    if done:
-                        break
 
             if vm_name_match:
-                done = False
                 for vm_name in map(lambda x: x.name, existing_vms):
                     if re.match(vm_name_match, vm_name):
                         for vm in existing_vms:
                             if vm.name == vm_name:
                                 tmp_vms.append(vm)
-                            done = True
                             break
-                    if done:
-                        break
 
             tmp_vms = unique_list(tmp_vms)
             backup.run_backup(tmp_vms, allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
@@ -171,15 +159,11 @@ try:
             tmp_vms = []  # type: [VM]
 
             if vms_uuid and len(vms_uuid) > 0:
-                done = False
                 for vm_uuid in vms_uuid:
                     for vm in existing_vms:
                         if vm.uuid == vm_uuid:
                             tmp_vms.append(vm)
-                            done = True
                             break
-                    if done:
-                        break
 
             if vms_id and len(vms_id) > 0:
                 done = False
@@ -187,22 +171,15 @@ try:
                     for vm in existing_vms:
                         if vm.id == vm_id:
                             tmp_vms.append(vm)
-                            done = True
                             break
-                    if done:
-                        break
 
             if vm_name_match:
-                done = False
                 for vm_name in map(lambda x: x['vm.name'], vm_backups):
                     if re.match(vm_name_match, vm_name):
                         for vm in existing_vms:
                             if vm.name == vm_name:
                                 tmp_vms.append(vm)
-                            done = True
-                            break
-                    if done:
-                        break
+                                break
 
             if len(tmp_vms) == 0:
                 exit(0)
