@@ -299,7 +299,7 @@ class Proxmox:
         return current
 
     def update_agent_info(self, vm: VM):
-        agent_info = self.session.nodes(vm.node).qemu(vm.id).agent('info').get()
+        agent_info = self.session.nodes(vm.node).qemu(vm.id).agent('info').get(server_error_as_none=True)
         agent_info = agent_info['result'] if agent_info and agent_info['result'] else None
         vm.set_guest_agent_info(agent_info)
         return agent_info

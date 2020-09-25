@@ -65,7 +65,7 @@ class ProxmoxResource(ProxmoxResourceBase):
 
         return self.__class__(**kwargs)
 
-    def _request(self, method, data=None, params=None, retries_non_server_error=3):
+    def _request(self, method, data=None, params=None, retries_non_server_error=3, server_error_as_none=False):
         url = self._store["base_url"]
         if data:
             log.debug(f'{method} {url} {data}')
@@ -85,6 +85,9 @@ class ProxmoxResource(ProxmoxResourceBase):
             self._store['session'].cookies = cookiejar_from_dict({"PVEAuthCookie": self._store['session'].auth.pve_auth_cookie})
             log.debug('Retry original request.')
             return self._request(method, data=data, params=params)
+
+        if server_error_as_none and resp.status_code >= 500:
+            return None
 
         if resp.status_code >= 500 and retries_non_server_error > 0:
             log.warn(f'Received {resp.status_code}, retry {retries_non_server_error} times after waiting 10 seconds')
@@ -107,22 +110,22 @@ class ProxmoxResource(ProxmoxResourceBase):
         elif 200 <= resp.status_code <= 299:
             return self._store["serializer"].loads(resp)
 
-    def get(self, *args, **params):
+    def get(self, server_error_as_none=False, *args, **params):
         return self(args)._request("GET", params=params)
 
-    def post(self, *args, **data):
+    def post(self, server_error_as_none=False, *args, **data):
         return self(args)._request("POST", data=data)
 
-    def put(self, *args, **data):
+    def put(self, server_error_as_none=False, *args, **data):
         return self(args)._request("PUT", data=data)
 
-    def delete(self, *args, **params):
+    def delete(self, server_error_as_none=False, *args, **params):
         return self(args)._request("DELETE", params=params)
 
-    def create(self, *args, **data):
+    def create(self, server_error_as_none=False, *args, **data):
         return self.post(*args, **data)
 
-    def set(self, *args, **data):
+    def set(self, server_error_as_none=False, *args, **data):
         return self.put(*args, **data)
 
 
