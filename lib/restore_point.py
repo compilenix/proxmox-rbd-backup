@@ -135,6 +135,21 @@ class RestorePoint:
             if backup and vm_uuid:
                 backup.remove_vm_snapshot(backup.get_vm(vm_uuid), point['restore_point'])
 
+    def remove_restore_point_all(self, vm_uuid: str = None, backup=None):
+        if not vm_uuid:
+            raise ArgumentError('at least one parameter must be set; vm_uuid')
+
+        images = self._ceph.get_rbd_images(self._backup_rbd_pool)
+
+        for image in images:
+            if vm_uuid and vm_uuid not in image:
+                continue
+            points = self._ceph.get_rbd_snapshots(self._backup_rbd_pool, image)
+            for point in points:
+                backup.remove_vm_snapshot(backup.get_vm(vm_uuid), point['name'])
+
+            self._ceph.remove_rbd_snapshot_all(self._backup_rbd_pool, image)
+
     def remove_backup(self, vm_uuid: str):
         images = self._ceph.get_rbd_images(self._backup_rbd_pool)
         for image in images:

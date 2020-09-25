@@ -251,15 +251,15 @@ class Backup:
 
         for vm in tmp_vms:
             try:
+                log.info(f'backup starting for {vm}')
                 snapshot_name = prefix + ''.join([random.choice('0123456789abcdef') for _ in range(16)])
-
                 self.update_vm_ignore_disks(vm)
 
                 if not self._proxmox.is_feature_available('snapshot', vm):
                     log.warn(f'The snapshot feature is currently not available for {vm}.')
                     continue
 
-                if vm.status == 'running' and vm.agent:
+                if vm.running and vm.agent:
                     if not self._proxmox.is_guest_agent_running(vm):
                         log.warn(f'Guest Agent Tools are not running, this is required if "QEMU Guest Agent" is set to "Enabled" in Proxmox')
                         continue

@@ -89,6 +89,9 @@ class Ceph:
     def remove_rbd_snapshot(self, pool: str, image: str, snapshot: str, command_inject: str = ''):
         exec_raw(f'{command_inject + " " if command_inject else "" }' + 'rbd -p ' + pool + ' snap rm ' + image + '@' + snapshot)
 
+    def remove_rbd_snapshot_all(self, pool: str, image: str, command_inject: str = ''):
+        exec_raw(f'{command_inject + " " if command_inject else "" }' + 'rbd -p ' + pool + ' snap purge ' + pool + '/' + image)
+
     def get_rbd_image_info(self, pool: str, image: str, command_inject: str = ''):
         return exec_parse_json(f'{command_inject + " " if command_inject else "" }' + 'rbd -p ' + pool + ' --format json info ' + image)
 

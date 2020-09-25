@@ -62,7 +62,8 @@ class Disk(Cacheable):
 
 
 class VM(Cacheable):
-    status: bool
+    status: str
+    running: bool
     _rbd_disks: [Disk]
     _config: str
     node: Node
@@ -79,10 +80,10 @@ class VM(Cacheable):
         self.name = name
         self.node = node
         self._rbd_disks = rbd_disks if rbd_disks is not None else []
+        self.status = status
         self.running = True if status == 'running' else False
         self._guest_agent_info = None
         self._config = ''
-        self.status = False
         self.agent = False
 
     def __str__(self):

@@ -84,7 +84,7 @@ class ProxmoxResource(ProxmoxResourceBase):
                                                           self._store['session'].auth.verify_ssl)
             self._store['session'].cookies = cookiejar_from_dict({"PVEAuthCookie": self._store['session'].auth.pve_auth_cookie})
             log.debug('Retry original request.')
-            return self._request(method, data=data, params=params)
+            return self._request(method, data=data, params=params, server_error_as_none=server_error_as_none)
 
         if server_error_as_none and resp.status_code >= 500:
             return None
@@ -92,7 +92,7 @@ class ProxmoxResource(ProxmoxResourceBase):
         if resp.status_code >= 500 and retries_non_server_error > 0:
             log.warn(f'Received {resp.status_code}, retry {retries_non_server_error} times after waiting 10 seconds')
             time.sleep(10)
-            return self._request(method, data=data, params=params, retries_non_server_error=retries_non_server_error - 1)
+            return self._request(method, data=data, params=params, retries_non_server_error=retries_non_server_error - 1, server_error_as_none=server_error_as_none)
 
         if resp.status_code >= 400:
             if hasattr(resp, 'reason'):
@@ -110,23 +110,23 @@ class ProxmoxResource(ProxmoxResourceBase):
         elif 200 <= resp.status_code <= 299:
             return self._store["serializer"].loads(resp)
 
-    def get(self, server_error_as_none=False, *args, **params):
-        return self(args)._request("GET", params=params)
+    def get(self, *args, server_error_as_none=False, **params):
+        return self(args)._request("GET", server_error_as_none=server_error_as_none, params=params)
 
-    def post(self, server_error_as_none=False, *args, **data):
-        return self(args)._request("POST", data=data)
+    def post(self, *args, server_error_as_none=False, **data):
+        return self(args)._request("POST", server_error_as_none=server_error_as_none, data=data)
 
-    def put(self, server_error_as_none=False, *args, **data):
-        return self(args)._request("PUT", data=data)
+    def put(self, *args, server_error_as_none=False, **data):
+        return self(args)._request("PUT", server_error_as_none=server_error_as_none, data=data)
 
-    def delete(self, server_error_as_none=False, *args, **params):
-        return self(args)._request("DELETE", params=params)
+    def delete(self, *args, server_error_as_none=False, **params):
+        return self(args)._request("DELETE", server_error_as_none=server_error_as_none, params=params)
 
-    def create(self, server_error_as_none=False, *args, **data):
-        return self.post(*args, **data)
+    def create(self, *args, server_error_as_none=False, **data):
+        return self.post(*args, server_error_as_none=server_error_as_none, **data)
 
-    def set(self, server_error_as_none=False, *args, **data):
-        return self.put(*args, **data)
+    def set(self, *args, server_error_as_none=False, **data):
+        return self.put(*args, server_error_as_none=server_error_as_none, **data)
 
 
 class ProxmoxAPI(ProxmoxResourceBase):

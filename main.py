@@ -98,7 +98,7 @@ try:
             lock_file.write(str(os.getpid()))
             lock_file.close()
 
-            if not vms_uuid and not vm_name_match:
+            if not vms_uuid and not vm_name_match and not vms_id:
                 backup.run_backup(allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
                 os.remove('/tmp/proxmox-rbd-backup.lock')
                 exit(0)
@@ -107,19 +107,39 @@ try:
             tmp_vms = []
 
             if vms_uuid and len(vms_uuid) > 0:
-                for i, vm_uuid in enumerate(vms_uuid):
-                    if vm_uuid in map(lambda x: x.uuid, existing_vms):
-                        tmp_vms.append(existing_vms[i])
+                done = False
+                for vm_uuid in vms_uuid:
+                    for vm in existing_vms:
+                        if vm.uuid == vm_uuid:
+                            tmp_vms.append(vm)
+                            done = True
+                            break
+                    if done:
+                        break
 
             if vms_id and len(vms_id) > 0:
-                for i, vm_id in enumerate(vms_id):
-                    if vm_id in map(lambda x: x.id, existing_vms):
-                        tmp_vms.append(existing_vms[i])
+                done = False
+                for vm_id in vms_id:
+                    for vm in existing_vms:
+                        if vm.id == vm_id:
+                            tmp_vms.append(vm)
+                            done = True
+                            break
+                    if done:
+                        break
 
             if vm_name_match:
-                for i, vm_name in enumerate(map(lambda x: x.name, existing_vms)):
+                done = False
+                for vm_name in map(lambda x: x.name, existing_vms):
                     if re.match(vm_name_match, vm_name):
-                        tmp_vms.append(existing_vms[i])
+                        for vm in existing_vms:
+                            if vm.name == vm_name:
+                                tmp_vms.append(vm)
+                            done = True
+                            break
+                    if done:
+                        break
+
             tmp_vms = unique_list(tmp_vms)
             backup.run_backup(tmp_vms, allow_using_any_existing_snapshot=allow_using_any_existing_snapshot)
             os.remove('/tmp/proxmox-rbd-backup.lock')
@@ -140,20 +160,20 @@ try:
             vm_name_match = args.vm_name
             force = args.force
 
-            if is_list_empty(vms_uuid) and not vm_name_match:
-                log.error('require any of: vms_uuid, vm_name_match')
+            if is_list_empty(vms_uuid) and not vm_name_match and is_list_empty(vms_id):
+                log.error('require any of: vm_uuid, vm_name_match, vm_id')
                 exit(1)
 
             restore_point = RestorePoint(servers, config)
             backup.init_proxmox()
-            vms_proxmox = backup.get_vms_proxmox()
+            existing_vms = backup.get_vms_proxmox()
             vm_backups = backup.get_vms()
             tmp_vms = []  # type: [VM]
 
             if vms_uuid and len(vms_uuid) > 0:
                 done = False
                 for vm_uuid in vms_uuid:
-                    for vm in vms_proxmox:
+                    for vm in existing_vms:
                         if vm.uuid == vm_uuid:
                             tmp_vms.append(vm)
                             done = True
@@ -164,7 +184,7 @@ try:
             if vms_id and len(vms_id) > 0:
                 done = False
                 for vm_id in vms_id:
-                    for vm in vms_proxmox:
+                    for vm in existing_vms:
                         if vm.id == vm_id:
                             tmp_vms.append(vm)
                             done = True
@@ -173,20 +193,23 @@ try:
                         break
 
             if vm_name_match:
+                done = False
                 for vm_name in map(lambda x: x['vm.name'], vm_backups):
                     if re.match(vm_name_match, vm_name):
-                        for vm in vms_proxmox:
+                        for vm in existing_vms:
                             if vm.name == vm_name:
                                 tmp_vms.append(vm)
+                            done = True
+                            break
+                    if done:
+                        break
 
             if len(tmp_vms) == 0:
                 exit(0)
 
             for vm in tmp_vms:
                 if force:
-                    restore_points = restore_point.get_restore_points(vm.uuid)
-                    for point in restore_points:
-                        restore_point.remove_restore_point(vm.uuid, point['name'], backup=backup)
+                    restore_point.remove_restore_point_all(vm.uuid, backup=backup)
                 try:
                     restore_point.remove_backup(vm.uuid)
                 except Exception as error:
