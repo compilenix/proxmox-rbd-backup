@@ -70,6 +70,7 @@ class VM(Cacheable):
     uuid: str
     id: int
     _guest_agent_info: object
+    agent: bool
 
     def __init__(self, vm_id=0, uuid='unknown', name='unknown', node=None, rbd_disks=None, status='unknown'):
         super().__init__()
@@ -82,6 +83,7 @@ class VM(Cacheable):
         self._guest_agent_info = None
         self._config = ''
         self.status = False
+        self.agent = False
 
     def __str__(self):
         return f'{self.name} (id={self.id}, uuid={self.uuid})'
@@ -98,6 +100,8 @@ class VM(Cacheable):
         for item in cfg:
             if item['key'] == 'digest':
                 continue
+            if item['key'] == 'agent':
+                self.agent = bool(item['value'])
             if item['key'] == 'smbios1':
                 # extract vm uuid from smbios1
                 tmp_smbios1 = item['value'].split(',')
