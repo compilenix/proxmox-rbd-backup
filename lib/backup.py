@@ -259,7 +259,7 @@ class Backup:
                     log.warn(f'The snapshot feature is currently not available for {vm}.')
                     continue
 
-                if vm.agent:
+                if vm.status == 'running' and vm.agent:
                     if not self._proxmox.is_guest_agent_running(vm):
                         log.warn(f'Guest Agent Tools are not running, this is required if "QEMU Guest Agent" is set to "Enabled" in Proxmox')
                         continue
